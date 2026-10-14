@@ -26,17 +26,19 @@ mkdir -p "$OUTD"
 ENVS=(DISPLAY="$DISP" ISO_EXPORT="$FIG" ISO_SS="$SS" ISO_THEME="$THEME")
 [ -n "$LIFT" ] && ENVS+=(ISO_LIFT="$LIFT")
 [ "$MOTION" = 1 ] && ENVS+=(ISO_MOTION=1)
-one(){ env "${ENVS[@]}" ISO_FRAME="$1" ISO_N="$2" ISO_OUT="$3" timeout 120 "$BIN" >/dev/null 2>&1; }
+ERRF="$(mktemp -t iso_err.XXXXXX)"
+one(){ env "${ENVS[@]}" ISO_FRAME="$1" ISO_N="$2" ISO_OUT="$3" timeout 120 "$BIN" >/dev/null 2>"$ERRF" || true; }
 
 case "$CMD" in
   render)
     PNG="$OUTD/${FIG}.png"; one 0 1 "$PNG"
-    [ -f "$PNG" ] || { echo "出图失败（图名 $FIG 是否存在？）" >&2; exit 1; }
+    [ -f "$PNG" ] || { echo "出图失败（图名 $FIG 是否存在？）" >&2; sed -n '1,5p' "$ERRF" >&2; exit 1; }
     echo "$PNG" ;;
   anim)
     [ -n "$FF" ] || { echo "需要 ffmpeg" >&2; exit 1; }
     FD="$OUTD/${FIG}_frames"; rm -rf "$FD"; mkdir -p "$FD"
-    env "${ENVS[@]}" ISO_BATCH=1 ISO_N="$FRAMES" ISO_OUT="$FD" timeout 600 "$BIN" >/dev/null 2>&1
+    env "${ENVS[@]}" ISO_BATCH=1 ISO_N="$FRAMES" ISO_OUT="$FD" timeout 600 "$BIN" >/dev/null 2>"$ERRF" || true
+    [ -f "$FD/f0000.png" ] || { echo "出动画失败（图名 $FIG 是否存在？）" >&2; sed -n '1,5p' "$ERRF" >&2; exit 1; }
     GIF="$OUTD/${FIG}.gif"; MP4="$OUTD/${FIG}.mp4"
     ffmpeg -y -framerate 60 -i "$FD/f%04d.png" \
       -vf "scale=iw:ih:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" "$GIF" >/dev/null 2>&1

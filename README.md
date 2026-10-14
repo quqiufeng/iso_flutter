@@ -13,7 +13,7 @@
 | `bin/iso.sh anim tmall-genie --motion` | `bin/iso.sh anim tmall-genie-dart --motion` |
 
 > 天猫精灵 X1：等距图 + "唤醒→开盖→合上"动画。两版**逐像素一致**。
-> 源文件：`example/tmall-genie/{tmall_genie.lua, tmall_genie.dart}`；产物：`example/res/{lua,dart}/`。
+> 源文件：`example/tmall-genie/{tmall-genie.lua, tmall_genie.dart}`；产物：`example/res/{lua,dart}/`。
 
 ---
 
@@ -27,11 +27,15 @@ iso_flutter/                       # 独立仓（自包含）
     lib/iso_render.dart                                # 渲染层：kit 线稿样式 → Canvas（Dart/Lua 图共用）
     lib/lua_bridge.dart                                # Dart ←FFI→ LuaJIT 桥
     lib/lua/{iso_kit,lathe,tube}.lua                   # 引擎（Lua，与 Dart 等价）—— 随包打成 assets
-    tool/{kit_parity.dart,kit_parity.lua,lua_probe.dart}  # 对拍 / 桥探针
+    tool/{kit_parity.dart,kit_parity.lua,parity.sh,lua_probe.dart}  # 对拍（parity.sh）/ 桥探针
   app/                             # 应用（Flutter name: iso_app，依赖 ../iso_engine）
-    lib/main.dart                                      # 窗口 + 导出 CLI + 图注册表 _figures
-    lib/lua/figures/tmall_genie.lua                    # 图（Lua 版天猫精灵）—— 打成 assets
-    assets/fonts/  shaders/
+    lib/main.dart                                      # 入口（ISO_EXPORT→导出，否则窗口）
+    lib/ui.dart                                        # 交互窗口 + painter（整数缩放+2×超采样+缓存）
+    lib/export.dart                                    # 离屏导出 CLI（ISO_* 环境变量）
+    lib/figures.dart                                   # 图（Dart 版天猫精灵 + 测试图）+ 注册表
+    lib/lua_figures.dart                               # Lua 图运行器（解包 assets→预编译→每帧调用→渲染）
+    lib/lua/figures/tmall-genie.lua                    # 图（Lua 版天猫精灵）—— 打成 assets
+    assets/fonts/
   docs/references/*.md             # 设计规范（craft/kit/motion…，来自 anatomy）
   docs/LICENSE-anatomy            # 署名（MIT）
 ```

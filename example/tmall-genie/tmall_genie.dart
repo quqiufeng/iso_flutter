@@ -1,7 +1,7 @@
 // 天猫精灵 X1 —— **Dart 参考实现**（从 app/lib/main.dart 抽取；运行版在那边，注册为 `tmall-genie-dart`）
 //
 // 图 = 一个画图函数 (canvas, palette, lift, time)：用引擎的图元摆零件、按时间做动画。
-// 依赖引擎包 `iso_engine`（iso_kit / iso_render）。与 Lua 版 example/tmall-genie/tmall_genie.lua **等价**。
+// 依赖引擎包 `iso_engine`（iso_kit / iso_render）。与 Lua 版 example/tmall-genie/tmall-genie.lua **等价**。
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 

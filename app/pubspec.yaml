@@ -60,9 +60,6 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  shaders:
-    - shaders/flame.frag
-
   assets:
     - lib/lua/figures/
 

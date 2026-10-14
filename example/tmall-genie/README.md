@@ -4,10 +4,10 @@
 
 | 文件 | 语言 | 图名 | 说明 |
 |---|---|---|---|
-| `tmall_genie.lua` | **Lua** | `tmall-genie`（默认） | `return function(lift,time) -> 绘制指令 JSON`，由 app 内嵌 LuaJIT 运行 |
+| `tmall-genie.lua` | **Lua** | `tmall-genie`（默认） | `return function(lift,time) -> 绘制指令 JSON`，由 app 内嵌 LuaJIT 运行 |
 | `tmall_genie.dart` | **Dart** | `tmall-genie-dart` | `void tmallGenieDartFigure(canvas, palette, lift, time)`，编译进 app 运行 |
 
-两者**逐像素一致**（渲染 RMSE≈1e-5）。**运行版**分别在 `app/lib/lua/figures/tmall_genie.lua` 与
+两者**逐像素一致**（渲染 RMSE≈1e-5）。**运行版**分别在 `app/lib/lua/figures/tmall-genie.lua` 与
 `app/lib/main.dart`（**本目录只是拷出来的示例**）。
 
 ## 出图 / 出动画
