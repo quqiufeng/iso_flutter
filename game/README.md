@@ -20,7 +20,7 @@
 | `behaviors.lua` | 行为(AI)：`rush/ranged/guard…`，统一签名 `(u, w, dt)` |
 | `weapons.lua` | 命中效果：`melee/arrow/splash/heavy…` |
 | `abilities.lua` | 技能：`ult/whirl` |
-| `world.lua` | **世界内核**：查询 / 推进 / 交战 / 结算 / **emit 事件**（不碰 `love.*`，可 headless） |
+| `arena.lua` | **世界内核**：查询 / 推进 / 交战 / 结算 / **emit 事件**（不碰 `love.*`，可 headless）<br>（`world.lua` 是另一套"地图世界"，供 `sim.lua` 走动 demo 用） |
 | `battle.lua` | **组装门面**：`require("battle").new(...)`（对外 API 不变） |
 
 - 加兵种 → `config.units` 加一行；加行为 → `behaviors.lua` 一个函数；加武器 → `weapons.lua` 一个函数——**都不动主循环**。
