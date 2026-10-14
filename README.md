@@ -17,12 +17,14 @@
 
 ---
 
-## 蓝图：AI 游戏开发系统
+## 游戏（AI 游戏开发系统）· 蓝图
 
-把本引擎封装成"**AI 可驱动**"的游戏运行时（**Sim 纯 Lua / Render Flutter 分离** + headless 步进 + 输入注入/回放 + 状态内省），
-接上 agent 的感知-推理-行动闭环 → **人类给"想法 + 意见"，AI 自己开发、自己试玩、自己看画面、自己迭代 → 一个游戏诞生**。
-
-设计蓝图见 [`docs/ai-game-system.md`](docs/ai-game-system.md)。（现状：渲染/几何/线稿/Lua/离屏出图已扎实；**游戏运行时待建**。）
+- **设计 / 图表**：本引擎（`iso_engine` + `bin/iso.sh`）→ 出**等距矢量图 / 图表**。
+- **游戏运行时**：集成 **LÖVE**（开源 Lua 2D 引擎，`game/love/`）——渲染 / 输入 / 动画。
+- **游戏逻辑**：**纯 Lua Sim**（`iso_engine/lib/lua/game/battle.lua`）——`luajit` headless 驱动（agent 测试/复现）+ LÖVE 渲染，**同一份**。
+- **GUI 容器**：**Flutter**（`app/`，只做窗口 / 工具，不做游戏渲染）。
+- 目标：**人类给"想法 + 意见"，AI 自己开发 / 试玩 / 看画面 / 迭代 → 一个游戏诞生**。
+  详见 [`docs/ai-game-system.md`](docs/ai-game-system.md)、[`game/README.md`](game/README.md)。
 
 ---
 

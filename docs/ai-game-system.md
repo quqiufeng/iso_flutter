@@ -120,7 +120,41 @@ AI 可以在**自己的 LuaJIT 里**直接 `require` 并运行它（`step/act/st
 
 ---
 
-## 8. 相关文档
+## 8. 技术方案（v2 · 当前落地）
+
+> 与前面 §2 的"Sim/Render 分离"一致；下面是**选型定稿 + 已落地部分**。
+
+| 层 | 选型 | 说明 |
+|---|---|---|
+| **游戏逻辑（Sim）** | **纯 Lua** `iso_engine/lib/lua/game/battle.lua` | 确定性、headless、可回放；**`luajit` 直接跑**（agent 驱动/断言/复现），**同一份**也喂 LÖVE 渲染 |
+| **运行时 / 渲染** | **LÖVE（开源 Lua 2D 引擎）** `game/love/` | LuaJIT + SDL/OpenGL；`love.graphics` GPU 渲染。**集成进本项目**（当运行时用），不是"把我们的东西搬过去" |
+| **GUI 容器** | **Flutter**（`app/`） | **只做窗口/面板/工具**，**不再做游戏渲染**（按用户定） |
+| **角色动画** | **分件 + 逐帧** | 运行时逐帧（`Quad` 循环）+ 分件（body parts）可扩展骨骼；**素材用 CC0 开源包** |
+| **素材** | **CC0 开源素材包** 为主 | 例：*Free 2D Animated Vector Game Character Sprites*（角色 walk/idle/hit/death + 分件 + 武器 + 地面/岩石，CC0）|
+| **Agent 驱动** | `luajit -e` + 截图 | 无需 MCP/协议：跑 Lua 玩/测；`xdotool`+`import` 截图，agent 自己看 |
+
+**关键教训**
+- **动画素材不能靠 SD 自动生成**：一致性/分层不保证（实测帧表出成 3×4 网格、分件糊成一团）→ **用现成 CC0 素材包 / 手工 / 矢量烘焙**。
+- 我们**自己的引擎仍负责"图表/矢量插画"**（iso.sh，`iso_engine`）；**游戏**则交给 LÖVE。
+
+**数据流**
+```
+人类：想法 + 意见
+   │
+Agent（my-agent）写 Lua(Sim + 场景/素材)
+   ├─ luajit  →  headless 跑一局/断言/复现（流程测试，便宜）
+   └─ LÖVE     →  OpenGL 渲染 → 截图 → agent 看图 → 迭代
+        ↓
+     游戏诞生（Flutter 只当 GUI 容器）
+```
+
+**目录**
+- `game/love/` —— LÖVE 工程（`main.lua` + `assets/`）；`love ~/iso_flutter/game/love` 运行
+- `iso_engine/lib/lua/game/battle.lua` —— 纯 Lua Sim（共用）
+
+---
+
+## 9. 相关文档
 
 - `docs/automation.md` —— my-agent 全自动化开发模式（闭环方法论）
 - `docs/TESTING.md` —— 测试规范
