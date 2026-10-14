@@ -60,6 +60,20 @@ sd-cli -M vid_gen -m sd15.safetensors --vae vae-ft-mse.safetensors \
 - LÖVE 里 `NBMAP`（`main.lua`）把兵种映射到角色（当前各兵种统一用 `knight`）；帧从 `assets/nb/<name>_<anim>_<i>.png` 加载，走路循环。
 - 关键帧尺寸偏大 → 缩放到 `~1.9*cam.s` 高绘制；图像开 **mipmap** 保持清晰。
 
+## 技能 / 特效制作（大招为例）
+```
+① 动作关键帧 = 关键帧方法（NB，同一参考图）
+   蓄力→举剑→砸地→收势 4 帧 → assets/nb/knight_ult_0..3（旋斩 5 帧 knight_whirl_*）
+   bash bin/img_nano.sh "…ULTIMATE KEYFRAME 3：砸地…" --ref example/rig-knight/knight_half.png --out /tmp/ult
+   → BiRefNet 抠图 → 脚底对齐
+② 特效层 = 程序化 VFX（LÖVE 画，不用图），按施法进度 p 分三段：
+   蓄力金晕 → 砸地(全屏闪 + 震屏 + 冲击环 + 放射光 + 火花) → 余波扩散环
+   （旋斩：白色刀光弧线绕身飞转）
+③ 数值 = Sim：battle:ultimate() 全体敌方 AoE+CD；battle:whirlwind() 全体我方旋风斩
+④ 播放 = 动画按固定时长不循环（ULT_DUR=1.1s / WHIRL_DUR=0.75s），VFX 同步
+```
+- 按键：`空格/Q` 大招 · `W` 旋斩。
+
 ## 备选方案（仍在仓库，可切换）
 - **CC0 paper-doll**：`bin/char.sh u1 '#9ec6ff'` —— 分件按帧组装，换武器/染色。素材源 `/opt/charpack/`。
 - **自建 Lua 骨骼**：`iso_engine/lib/lua/rig.lua`（`bin/cutparts.sh` 切件 → 绑骨）。

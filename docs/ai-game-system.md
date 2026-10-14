@@ -160,6 +160,23 @@ sd-cli -M vid_gen -m sd15.safetensors --vae vae-ft-mse.safetensors \
   --motion-module mm_sd15_v3.safetensors -i frame.png --video-frames 16 --fps 8 -o out.avi
 ```
 
+**技能 / 打斗特效制作（大招为例）**
+```
+① 动作关键帧  = 关键帧方法（NB，同一参考图）
+   「蓄力 → 举剑 → 砸地 → 收势」4 帧 → knight_ult_0..3
+   （旋斩同理 5 帧 knight_whirl_0..4；攻击 3 帧 knight_attack_0..2）
+   bin/img_nano.sh "同参考图骑士…ULTIMATE KEYFRAME 3：砸地…" --ref ref.png ...
+   → BiRefNet 抠图 → 脚底基线对齐 → 存 game/love/assets/nb/
+② 特效层    = 程序化 VFX（LÖVE 绘制，不用图），按施法进度 p 分三段：
+   · 蓄力 (p<0.45)：金色光晕逐层叠加 + 光丝向剑聚拢
+   · 砸地瞬间(p≈0.45)：全屏闪光 + 震屏 + 冲击环 + 放射光 + 火花粒子
+   · 余波 (p>0.45)：多圈冲击环扩散淡出 + 地面光晕
+   （旋斩：白色刀光弧线绕身飞转 + 扩散光圈）
+③ 数值       = Sim（battle.lua）：ultimate() 全体敌方 AoE + 冷却；whirlwind() 全体我方旋风斩 + 周围 AoE
+④ 播放同步   = 动画按固定时长不循环（ULT_DUR=1.1s / WHIRL_DUR=0.75s），VFX 与该进度对齐
+```
+即：**动作 = 关键帧（AI）**，**特效 = 程序化叠加**，**数值 = Sim**，三者按同一进度同步。
+
 **关键教训**
 - **⚠️ 生成角色（关键帧/姿势）必须传参考图 `--ref`，且始终用同一张角色图**：Nano Banana 靠参考图锁定"这只角色"。**不传参考图 → 每次出的形象都不同**（发型/盔甲/配色/比例漂移）→ **白花钱、跨帧对不上、不能当动画用**。改动作只改 `prompt`，**参考图永远是同一张**。
 - **关键帧一致性靠"同一参考图"**：Nano Banana 给同一张角色参考图、逐张出姿势，实测**跨帧形象高度一致**（contact/passing 互换无误）→ 是当前做角色的主力。
