@@ -9,3 +9,6 @@ build/
 
 # 系统
 .DS_Store
+
+# 示例输出的中间帧
+**/*_frames/

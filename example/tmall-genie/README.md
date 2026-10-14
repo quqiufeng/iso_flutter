@@ -18,6 +18,17 @@ bin/iso.sh render tmall-genie-dart   # Dart 版
 bin/iso.sh anim   tmall-genie --motion   # 出动画（GIF/MP4）
 ```
 
+## 产物（`../res/`）
+
+两版各自渲染的 PNG / GIF / MP4 已生成在 `example/res/`：
+
+| 目录 | 文件 |
+|---|---|
+| `example/res/lua/` | `tmall-genie.png` · `tmall-genie.gif` · `tmall-genie.mp4` |
+| `example/res/dart/` | `tmall-genie-dart.png` · `tmall-genie-dart.gif` · `tmall-genie-dart.mp4` |
+
+（两版的 png 逐像素一致；gif/mp4 为 120 帧 / 60fps 的开盖动画。）
+
 ## 这张图用了什么
 
 - **零件**：`cylinder`（脚/机身/顶盖/按键）、`knurl`+`sideArc`（出音缝/侧弧）、`ring`（LED 环/内圈/唤醒波纹）、`haloOf`（软投影）、`dotGrid`/`iso`（6 麦点）。
