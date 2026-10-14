@@ -253,13 +253,119 @@ local CHARMAP = { sword = "u1", archer = "u2", mage = "u3", goblin = "e1", shoot
 -- 兵种 → Nano Banana 关键帧角色（assets/nb/<name>_<anim>_<i>.png）
 local NBMAP = { sword = "knight", archer = "knight", mage = "knight", goblin = "knight", shooter = "knight", ogre = "knight" }
 
--- 飘伤害数字 / 大招特效 / 闪光 / 震屏
-local POPS = {}
+-- ===== 手感 / juice =====
+local POPS, PARTS = {}, {}          -- 飘伤害 / 碎屑火花
+local BANNER = nil                  -- 波次横幅
+local COMBO = { n = 0, t = 0 }
 local ULT_FX = nil
-local FLASH_T = 0
-local SHAKE = 0
-local ULT_DUR = 1.1
-local WHIRL_DUR = 0.75
+local FLASH_T, SHAKE, HITSTOP = 0, 0, 0
+local ULT_DUR, WHIRL_DUR = 1.1, 0.75
+local lastBase = { left = 100, right = 100 }
+local lastWave = 0
+local seen = setmetatable({}, { __mode = "k" })
+local SFX = {}
+
+local function makeSfx(freq, dur, decay, kind)
+  local rate, n = 44100, 0
+  n = math.max(1, math.floor(rate * dur))
+  local ok, sd = pcall(love.sound.newSoundData, n, rate, 16, 1)
+  if not ok then return nil end
+  for i = 0, n - 1 do
+    local tt = i / rate
+    local e = math.exp(-tt / decay)
+    local v
+    if kind == "noise" then v = (love.math.random() * 2 - 1) * e
+    elseif kind == "sweep" then v = math.sin(2 * math.pi * freq * (1 + tt * 4) * tt) * e
+    else v = math.sin(2 * math.pi * freq * tt) * e end
+    sd:setSample(i, math.max(-1, math.min(1, v * 0.32)))
+  end
+  local ok2, src = pcall(love.audio.newSource, sd)
+  return ok2 and src or nil
+end
+local function initSfx()
+  SFX.hit   = makeSfx(680, 0.06, 0.02, "tone")
+  SFX.death = makeSfx(120, 0.18, 0.06, "noise")
+  SFX.ult   = makeSfx(300, 0.5, 0.25, "sweep")
+  SFX.wave  = makeSfx(520, 0.14, 0.08, "tone")
+end
+local function play(s) if s then s:stop(); s:play() end end
+
+local function spawnParts(x, y, n, side)
+  for _ = 1, n do
+    PARTS[#PARTS + 1] = { x = x, y = y,
+      vx = (love.math.random() - 0.5) * 90, vy = -love.math.random() * 110 - 20, t = 0,
+      life = 0.5 + love.math.random() * 0.3,
+      col = side == "left" and { 0.45, 0.65, 1 } or { 1, 0.5, 0.45 } }
+  end
+end
+
+-- 每帧：检测 命中/阵亡/基地受击/波次；衰减 juice 计时
+local function stepJuice(d)
+  HITSTOP = math.max(0, HITSTOP - d)
+  SHAKE = math.max(0, SHAKE - d * 45)
+  FLASH_T = math.max(0, FLASH_T - d)
+  if BANNER then BANNER.t = BANNER.t + d; if BANNER.t > BANNER.life then BANNER = nil end end
+  COMBO.t = math.max(0, COMBO.t - d); if COMBO.t <= 0 then COMBO.n = 0 end
+  for _, u in ipairs(game.units) do
+    local prev = seen[u]
+    if prev and u.hp < prev.hp - 0.01 then
+      u._flash = 0.16
+      local x, y = sx(u.x, u.lane)
+      POPS[#POPS + 1] = { x = x, y = y - 2.0 * cam.s, val = math.max(1, math.floor(prev.hp - u.hp + 0.5)), t = 0 }
+      spawnParts(x, y - 1.2 * cam.s, 3, u.side)
+      play(SFX.hit)
+    end
+  end
+  for u, p in pairs(seen) do
+    local alive = false
+    for _, v in ipairs(game.units) do if v == u then alive = true; break end end
+    if not alive then
+      local x, y = sx(p.x, p.lane)
+      spawnParts(x, y - 1.2 * cam.s, 12, u.side)
+      play(SFX.death)
+      if u.side == "right" then
+        COMBO.n = COMBO.n + 1; COMBO.t = 2.0; COMBO.x = x; COMBO.y = y
+        HITSTOP = math.max(HITSTOP, 0.07)
+      end
+    end
+  end
+  for k in pairs(seen) do seen[k] = nil end
+  for _, u in ipairs(game.units) do seen[u] = { x = u.x, lane = u.lane, hp = u.hp } end
+  for _, side in ipairs({ "left", "right" }) do
+    if game.bases[side].hp < lastBase[side] - 0.01 then SHAKE = math.max(SHAKE, 8); FLASH_T = math.max(FLASH_T, 0.18) end
+    lastBase[side] = game.bases[side].hp
+  end
+  if game.wave ~= lastWave then lastWave = game.wave; BANNER = { text = "第 " .. game.wave .. " 波", t = 0, life = 1.2 }; play(SFX.wave) end
+  for i = #PARTS, 1, -1 do local p = PARTS[i]; p.t = p.t + d; p.x = p.x + p.vx * d; p.vy = p.vy + 320 * d; p.y = p.y + p.vy * d; if p.t > p.life then table.remove(PARTS, i) end end
+  for i = #POPS, 1, -1 do local p = POPS[i]; p.t = p.t + d; if p.t > 0.9 then table.remove(POPS, i) end end
+end
+
+local function drawJuice()
+  for _, p in ipairs(PARTS) do
+    local a = 1 - p.t / p.life
+    love.graphics.setColor(p.col[1], p.col[2], p.col[3], a)
+    love.graphics.rectangle("fill", p.x - 3, p.y - 3, 6, 6)
+  end
+  love.graphics.setColor(1, 1, 1)
+  for _, p in ipairs(POPS) do
+    local a = 1 - p.t / 0.9
+    love.graphics.setColor(1, 0.28, 0.22, a)
+    love.graphics.print("-" .. p.val, p.x - 8, p.y - p.t * 44)
+  end
+  love.graphics.setColor(1, 1, 1)
+  if COMBO.n >= 2 and COMBO.x then
+    love.graphics.setColor(1, 0.85, 0.3, math.min(1, COMBO.t))
+    love.graphics.print("x" .. COMBO.n, COMBO.x - 8, COMBO.y - 2.6 * cam.s)
+    love.graphics.setColor(1, 1, 1)
+  end
+  if BANNER then
+    local w = love.graphics.getWidth()
+    local a = math.min(1, BANNER.t / 0.2) * math.min(1, (BANNER.life - BANNER.t) / 0.3)
+    love.graphics.setColor(1, 1, 1, math.max(0, a))
+    love.graphics.printf(BANNER.text, 0, love.graphics.getHeight() * 0.16, w, "center")
+    love.graphics.setColor(1, 1, 1)
+  end
+end
 
 -- NB 关键帧动画：大招 / 旋风斩 / 攻击 / 走 / 站；含受击闪红 + 弧光
 local function drawNBUnit(u, x, y, name)
@@ -364,13 +470,13 @@ function love.load()
   end
   loadNbAnim("knight", "walk", 4); loadNbAnim("knight", "idle", 4); loadNbAnim("knight", "attack", 3)
   loadNbAnim("knight", "whirl", 5); loadNbAnim("knight", "ult", 4)
+  initSfx()
   game = battle.new({ cols = 10, rows = 8 })
   fit()
 end
 
 function love.update(d)
   if game.over then return end
-  game:step(d)
   -- AUTO 无人值守抓图：到点自动布兵并触发技能
   if autoT then
     autoT = autoT - d
@@ -380,22 +486,14 @@ function love.update(d)
       autoT = nil
     end
   end
-  -- 伤害事件 → 受击闪红 + 飘伤害数字
+  local sdt = HITSTOP > 0 and d * 0.15 or d          -- 击杀顿帧（慢动作）
+  game:step(sdt)
+  stepJuice(d)
+  -- 单位计时（闪红 / 施法 / 旋斩）
   for _, u in ipairs(game.units) do
-    local lh = u._lastHp
-    if lh and u.hp < lh - 0.01 then
-      u._flash = 0.16
-      local x, y = sx(u.x, u.lane)
-      POPS[#POPS + 1] = { x = x, y = y - 2.0 * cam.s, val = math.max(1, math.floor(lh - u.hp + 0.5)), t = 0 }
-    end
-    u._lastHp = u.hp
     if u._flash then u._flash = u._flash - d; if u._flash <= 0 then u._flash = nil end end
     if u._castUlt then u._castUlt = u._castUlt - d; if u._castUlt <= 0 then u._castUlt = nil end end
     if u._whirl then u._whirl = u._whirl - d; if u._whirl <= 0 then u._whirl = nil end end
-  end
-  for i = #POPS, 1, -1 do
-    POPS[i].t = POPS[i].t + d
-    if POPS[i].t > 0.9 then table.remove(POPS, i) end
   end
   if ULT_FX then
     ULT_FX.t = ULT_FX.t + d
@@ -404,8 +502,6 @@ function love.update(d)
     end
     if ULT_FX.t > ULT_FX.life then ULT_FX = nil end
   end
-  if FLASH_T > 0 then FLASH_T = math.max(0, FLASH_T - d) end
-  SHAKE = math.max(0, SHAKE - d * 45)
 end
 
 function love.keypressed(k)
@@ -605,13 +701,7 @@ function love.draw()
   table.sort(us, function(a, b) return (a.x + a.lane) < (b.x + b.lane) end)
   for _, u in ipairs(us) do drawUnit(u) end
 
-  -- 飘伤害数字
-  for _, p in ipairs(POPS) do
-    local a = 1 - p.t / 0.9
-    love.graphics.setColor(1, 0.28, 0.22, a)
-    love.graphics.print("-" .. p.val, p.x - 8, p.y - p.t * 44)
-  end
-  love.graphics.setColor(1, 1, 1)
+  drawJuice()
 
   -- 大招特效：蓄力金晕 → 冲击环 + 放射光 + 火花
   if ULT_FX then

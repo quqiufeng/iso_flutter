@@ -78,21 +78,35 @@ import -window "$WID" ~/iso_gen/shot.png || { eval "$(xdotool getwindowgeometry 
 
 ## 7. 开发提速：热重载 + 抓图/录像 + 动效自检
 
-| 工具 | 作用 |
+> ### ⭐ 默认动作（改任何游戏 / 动效都按这个来，**不做=未完成**）
+> 1. **用热重载跑**：`bin/dev.sh <game>` —— 改 `.lua` 存盘即自动重开，**不要手动 kill + 重启**；
+> 2. **每次改动后「抓/录 + 自检」**：
+>    - 抓帧：`AUTO=… CAPTURE_DIR=… love <game>`（动画触发时连拍）；
+>    - 或录屏：`ffmpeg x11grab` 录窗口 → mp4；
+>    - **自检**：`bin/motion.sh <帧目录>` → 看运动曲线，**确认真在动**（有峰值、非空帧、非卡死）；
+> 3. 产物统一放 `~/iso_gen/`（**禁 `/tmp`**），需要给人看的再 `cp` 一份到 `~`。
+
+### 用法
+| 命令 | 作用 |
 |---|---|
-| `bin/dev.sh [game/love\|game/tetris]` | **热重载**：改 `.lua` 存盘即自动重开窗口 |
-| `CAPTURE_DIR=… CAPTURE_FRAMES=N love <game>` | **埋钩子连拍**：动画/技能/消行**触发时**自动抓 N 帧到该目录（`F2` 手动） |
-| `AUTO=ult\|whirl`（对推）/ `AUTO=1`（方块） | **无人值守**：自动布兵/放招，或让 AI 自动玩，配合抓图/录像 |
-| `ffmpeg -f x11grab -video_size WxH -i :0.0+X,Y …` | **录屏**（比逐帧截图顺，动效完整） |
-| `bin/motion.sh <frames-dir> [glob]` | **动效自检**：相邻帧 RMSE 运动曲线（峰值帧 / 近似静止 / 强度）→ 判断"动"对不对 |
+| `bin/dev.sh [game/love\|game/tetris]` | **热重载**：监控 `*.lua`，存盘即自动重开窗口（日志 `~/iso_gen/dev.log`）|
+| `AUTO=ult\|whirl CAPTURE_DIR=DIR love game/love` | 无人值守：自动布兵放招并**触发时连拍** N 帧（`CAPTURE_FRAMES`，默认 40）|
+| `AUTO=1 CAPTURE_DIR=DIR love game/tetris` | AI 自动玩，**消行时连拍** |
+| 游戏内 `F2` | 手动开始连拍 |
+| `bin/motion.sh <帧目录> [glob]` | **动效自检**：相邻帧 RMSE 运动曲线（峰值帧/近似静止/强度）|
+| `ffmpeg -f x11grab -video_size WxH -framerate 30 -i :0.0+X,Y -t 秒 …` | 录窗口（`xdotool getwindowgeometry --shell $WID` 取 X/Y/W/H）|
 
 ```bash
-# 改代码即时看：热重载
+# ① 改代码即时看（热重载）
 bin/dev.sh game/tetris
-# 自动抓「大招」全过程 + 自检 + 出图
-AUTO=ult CAPTURE_DIR=$HOME/iso_gen/ult CAPTURE_FRAMES=55 love game/love
-bin/motion.sh ~/iso_gen/ult 'ult_*.png'
-```
 
-> 工作文件统一放 `~/iso_gen/`（**禁 `/tmp`**）。
+# ② 抓「大招」全过程并自检
+AUTO=ult CAPTURE_DIR=$HOME/iso_gen/ult CAPTURE_FRAMES=55 love game/love
+bin/motion.sh ~/iso_gen/ult 'ult_*.png'      # → 帧数/平均变化/峰值帧/运动曲线
+
+# ③ 录屏（更顺，动效完整）
+DISPLAY=:0 AUTO=ult love game/love & sleep 1.2
+WID=$(xdotool search --class love | head -1); eval "$(xdotool getwindowgeometry --shell $WID)"
+ffmpeg -f x11grab -video_size ${WIDTH}x${HEIGHT} -framerate 30 -i :0.0+${X},${Y} -t 3.4 -pix_fmt yuv420p ~/iso_gen/ult.mp4
+```
 
