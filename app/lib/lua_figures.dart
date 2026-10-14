@@ -46,6 +46,9 @@ class LuaFigures {
     return jsonDecode(_lua.run('return _FIGS["$name"]($lift, $time)')) as List<dynamic>;
   }
 
+  /// 通用：在**同一个 Lua 状态**里跑一段 Lua（返回字符串）。供游戏等复用。
+  String eval(String code) => _lua.run(code);
+
   void reportError(Object e) {
     if (_error != null) return;
     _error = '$e';

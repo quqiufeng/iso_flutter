@@ -16,3 +16,4 @@ dependencies:
 flutter:
   assets:
     - lib/lua/
+    - lib/lua/game/

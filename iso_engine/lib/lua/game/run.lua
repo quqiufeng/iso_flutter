@@ -9,7 +9,7 @@
 --   --every N          trace 间隔（默认 30）
 --   --json             最后打印完整 state JSON
 --   --replay           跑完后用输入记录重放一遍，校验一致性（确定性）
-package.path = (arg[0]:gsub("[^/]*$", "")) .. "sim/?.lua;" .. package.path
+package.path = (arg[0]:gsub("[^/]*$", "")) .. "?.lua;" .. package.path
 local sim = require("sim")
 
 local opts = { steps = 0, script = "", trace = false, every = 30, json = false, replay = false }
