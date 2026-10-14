@@ -14,6 +14,11 @@ function M.new()
       { x = 12, y = -6, r = 3,   kind = "box" },
     },
     goal = { x = 14, y = 14, r = 3 },   -- 到达即胜
+    -- 其他"动态角色"（NPC）：巡游（在路点间来回）；可被暂停（主角除外）
+    npcs = {
+      { x = -12, y = 0,  r = 2.2, kind = "guard", speed = 5, wp = { { x = -12, y = 0 },  { x = 12, y = 0 } } },
+      { x = 0,   y = -12, r = 2.2, kind = "drone", speed = 7, wp = { { x = 0, y = -12 }, { x = 0, y = 12 } } },
+    },
   }
 end
 

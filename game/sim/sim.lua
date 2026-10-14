@@ -42,16 +42,55 @@ M.encode = json
 function M.new(opts)
   opts = opts or {}
   local w = world.new()
+  local npcs = {}
+  for i, n in ipairs(w.npcs or {}) do
+    local wp = {}
+    for j, q in ipairs(n.wp) do wp[j] = { x = q.x, y = q.y } end
+    npcs[i] = { x = n.x, y = n.y, r = n.r, kind = n.kind, speed = n.speed, wp = wp, wi = 1, paused = false }
+  end
+  -- opts.npcs = N：生成 N 个 NPC（网格铺开）——用于"多角色场景"压力/效果测试
+  if opts.npcs then
+    npcs = {}
+    local side = math.max(1, math.ceil(math.sqrt(opts.npcs)))
+    for i = 1, opts.npcs do
+      local gx = ((i - 1) % side + 0.5) / side * 2 - 1
+      local gy = (math.floor((i - 1) / side) + 0.5) / side * 2 - 1
+      local x, y = gx * (w.size - 3), gy * (w.size - 3)
+      npcs[i] = {
+        x = x, y = y, r = 1.6, kind = "npc", speed = 3 + (i % 4),
+        wp = { { x = x - 3, y = y }, { x = x + 3, y = y } }, wi = 1, paused = false,
+      }
+    end
+  end
   return setmetatable({
+    opts = opts,
     world = w,
     tick = 0,
     player = { x = w.player.x, y = w.player.y, r = w.player.r },
+    npcs = npcs,         -- 其他动态角色（可暂停；主角除外）
     keys = {},           -- 持续按键
     selected = nil,      -- 最近一次 pick 的物件索引
     won = false,
     score = 0,
     log = {},            -- 输入记录（用于回放）
   }, { __index = M })
+end
+
+-- 暂停"其他动态角色"（主角除外）。filter 可为 {kind="guard"} 只停某类；省略=全部。
+function M:pauseNpcs(paused, filter)
+  paused = paused and true or false
+  for _, n in ipairs(self.npcs) do
+    if not filter or (filter.kind == nil or n.kind == filter.kind) then n.paused = paused end
+  end
+  self.log[#self.log + 1] = { tick = self.tick, pauseNpcs = paused, kind = filter and filter.kind or nil }
+end
+
+-- 暂停单个 NPC（1-based 下标）
+function M:pauseNpc(i, paused)
+  local n = self.npcs[i]
+  if not n then return end
+  n.paused = paused and true or false
+  self.log[#self.log + 1] = { tick = self.tick, pauseNpc = { i = i, paused = n.paused } }
 end
 
 -- 按键（up/down/left/right）
@@ -77,6 +116,22 @@ end
 -- 推进一帧（固定 dt）；确定性
 function M:step(dt)
   local p, w = self.player, self.world
+
+  -- 其他动态角色：巡游（**暂停则冻结**；主角不受影响）
+  for _, n in ipairs(self.npcs) do
+    if not n.paused then
+      local t = n.wp[n.wi]
+      local dx, dy = t.x - n.x, t.y - n.y
+      local d = math.sqrt(dx * dx + dy * dy)
+      if d < 0.2 then
+        n.wi = n.wi % #n.wp + 1
+      else
+        n.x = n.x + dx / d * n.speed * dt
+        n.y = n.y + dy / d * n.speed * dt
+      end
+    end
+  end
+
   local vx, vy = 0, 0
   if self.keys.right then vx = vx + 1 end
   if self.keys.left then vx = vx - 1 end
@@ -89,8 +144,13 @@ function M:step(dt)
   p.x = p.x + vx * dt
   p.y = p.y + vy * dt
 
-  -- 碰撞：圆 vs 圆（推出去）+ 地面边界
-  for _, o in ipairs(w.props) do
+  -- 碰撞：圆 vs 圆（推出去）+ 地面边界（物件 + **未暂停**的 NPC；暂停的 NPC = 幽灵不挡路）
+  local obstacles = {}
+  for _, o in ipairs(w.props) do obstacles[#obstacles + 1] = o end
+  for _, n in ipairs(self.npcs) do
+    if not n.paused then obstacles[#obstacles + 1] = n end
+  end
+  for _, o in ipairs(obstacles) do
     local dx, dy = p.x - o.x, p.y - o.y
     local d = math.sqrt(dx * dx + dy * dy)
     local min = p.r + o.r
@@ -145,9 +205,14 @@ function M:state()
   for i, o in ipairs(self.world.props) do
     props[i] = { x = o.x, y = o.y, r = o.r, kind = o.kind }
   end
+  local npcs = {}
+  for i, n in ipairs(self.npcs) do
+    npcs[i] = { x = n.x, y = n.y, r = n.r, kind = n.kind, paused = n.paused }
+  end
   return {
     tick = self.tick,
     player = { x = self.player.x, y = self.player.y, r = self.player.r },
+    npcs = npcs,
     selected = self.selected,
     won = self.won,
     goal = { x = self.world.goal.x, y = self.world.goal.y, r = self.world.goal.r },
@@ -158,8 +223,8 @@ end
 function M:json() return json(self:state()) end -- 注：模块级编码器是 sim.json(value)
 
 -- 回放：给定记录（key/act 序列），从新局跑一遍 → 同结果（确定性）
-function M.replay(log, dt)
-  local g = M.new()
+function M.replay(log, dt, opts)
+  local g = M.new(opts)
   local i = 1
   dt = dt or 1 / 60
   -- 记录按 tick 排（已天然有序）
@@ -185,6 +250,15 @@ function M.replay(log, dt)
     elseif e.goto ~= nil then
       g.log[#g.log + 1] = e
       g:_walk(e.goto.x, e.goto.y, dt)
+    elseif e.pauseNpcs ~= nil then
+      g.log[#g.log + 1] = e
+      for _, n in ipairs(g.npcs) do
+        if e.kind == nil or n.kind == e.kind then n.paused = e.pauseNpcs end
+      end
+    elseif e.pauseNpc ~= nil then
+      g.log[#g.log + 1] = e
+      local n = g.npcs[e.pauseNpc.i]
+      if n then n.paused = e.pauseNpc.paused end
     end
     i = i + 1
   end
