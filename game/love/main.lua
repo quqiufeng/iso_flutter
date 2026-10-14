@@ -8,8 +8,22 @@ package.path = root .. "/iso_engine/lib/lua/game/?.lua;" .. package.path
 
 local battle = require("battle")
 
+-- 加载 CC0 角色帧（game/love/assets/chars/<name>_<anim>_<i>.png）
+ANIM = {}
+local function loadAnim(name, anim, maxf)
+  local list = {}
+  for i = 0, maxf - 1 do
+    local img = loadImage(root .. "/game/love/assets/chars/" .. name .. "_" .. anim .. "_" .. i .. ".png")
+    if not img then break end
+    img:setFilter("linear", "linear")
+    list[#list + 1] = img
+  end
+  ANIM[name] = ANIM[name] or {}
+  ANIM[name][anim] = list
+end
+
 -- 从真实路径读图（LÖVE 11 无 mountFullPath → io 读字节 + newFileData）
-local function loadImage(path)
+function loadImage(path)
   local f = io.open(path, "rb")
   if not f then return nil end
   local data = f:read("*a")
@@ -25,19 +39,26 @@ local function iso(x, y) return (x * CA - y * SA) * U, (x * SA + y * CA) * SE * 
 local cam = { ox = 0, oy = 0, s = 40 }
 local function sx(x, y) local a, b = iso(x, y); return cam.ox + a * cam.s, cam.oy + b * cam.s end
 
-local SPR, game
+local SPR, PART, game
 local dt = 1 / 60
 
 local function loadSprites()
   SPR = {}
-  for _, n in ipairs({ "sword", "archer", "mage", "goblin", "shooter", "ogre", "castle_blue", "castle_red", "tile", "sword_sheet", "goblin_sheet" }) do
+  for _, n in ipairs({ "sword", "archer", "mage", "goblin", "shooter", "ogre", "castle_blue", "castle_red", "tile", "sword_sheet", "goblin_sheet", "archer_sheet", "mage_sheet", "shooter_sheet", "ogre_sheet" }) do
     local img = loadImage(root .. "/app/assets/sprites/" .. n .. ".png")
     local ok = img ~= nil
     if ok then img:setFilter("linear", "linear"); SPR[n] = img end
   end
+  -- 分件（A 骨骼）
+  PART = {}
+  for _, n in ipairs({ "sword_head","sword_torso","sword_arm","sword_leg","sword_weapon",
+                       "goblin_head","goblin_torso","goblin_arm","goblin_leg","goblin_weapon" }) do
+    local img = loadImage(root .. "/app/assets/parts/" .. n .. ".png")
+    if img then img:setFilter("linear", "linear"); PART[n] = img end
+  end
   -- 帧表 → 4 帧 Quad（B 逐帧）
   QUAD = {}
-  for _, n in ipairs({ "sword_sheet", "goblin_sheet" }) do
+  for _, n in ipairs({ "sword_sheet", "goblin_sheet", "archer_sheet", "mage_sheet", "shooter_sheet", "ogre_sheet" }) do
     local img = SPR[n]
     if img then
       local fw = img:getWidth() / 4
@@ -74,6 +95,9 @@ function love.load()
     if ok then love.graphics.setFont(f) end
   end
   loadSprites()
+  for _, nm in ipairs({ "hero", "foe1", "foe2" }) do
+    loadAnim(nm, "walk", 12); loadAnim(nm, "idle", 12); loadAnim(nm, "hit", 6); loadAnim(nm, "death", 12)
+  end
   game = battle.new()
   fit()
 end
@@ -100,8 +124,73 @@ function love.mousepressed(mx, my, btn)
   end
 end
 
+-- 分件骨骼：把件按关节位置/角度画出来
+local function part(img, px, py, ang, lenPx, flip, pvx, pvy)
+  if not img then return end
+  local iw, ih = img:getDimensions()
+  local sc = lenPx / ih
+  love.graphics.draw(img, px, py, ang, sc * (flip and -1 or 1), sc, iw * pvx, ih * pvy)
+end
+
+local function drawRig(u, x, y)
+  local dir = (u.side == "right") and -1 or 1
+  local H = 1.55 * cam.s
+  local flip = dir < 0
+  local moving = u.moving
+  local t = love.timer.getTime()
+  local ph = t * 9 + u.x * 1.2
+  local sw = moving and math.sin(ph) * 0.5 or 0
+  local b = moving and math.abs(math.sin(ph)) * 0.03 or 0     -- 躯干起伏
+  local atk = u.cd and u.rate and u.cd > u.rate * 0.8
+  local hipY, shoY, headY = y - H * 0.44, y - H * 0.74 - H * b, y - H * 0.90 - H * b
+  local P = PART
+  if u.side == "right" then love.graphics.setColor(1.15, 0.62, 0.62) else love.graphics.setColor(1, 1, 1) end
+  local function pfx(k) return "sword_" .. k end  -- 统一用骑士这套件（可靠）
+  -- 层序：后腿 → 后臂 → 躯干 → 头 → 前腿 → 前臂(+武器)
+  part(P[pfx("leg")], x, hipY, sw * dir, H * 0.50, flip, 0.5, 0.06)
+  part(P[pfx("arm")], x, shoY, -sw * dir, H * 0.34, flip, 0.5, 0.06)
+  part(P[pfx("torso")], x, (hipY + shoY) / 2, 0, H * 0.40, flip, 0.5, 0.5)
+  part(P[pfx("head")], x, headY, 0, H * 0.30, flip, 0.5, 0.92)
+  part(P[pfx("leg")], x, hipY, -sw * dir, H * 0.50, flip, 0.5, 0.06)
+  local armAng = (atk and -1.4 or sw) * dir
+  part(P[pfx("arm")], x, shoY, armAng, H * 0.34, flip, 0.5, 0.06)
+  part(P[pfx("weapon")], x + dir * 0.10 * H, shoY + H * (atk and -0.02 or 0.28), (atk and 0.9 or 0.3) * dir, H * 0.36, flip, 0.5, 0.9)
+  love.graphics.setColor(1, 1, 1)
+end
+
 local function drawUnit(u)
   local x, y = sx(u.x, u.lane)
+  local t = love.timer.getTime()
+  local nm = (u.side == "left") and "hero" or (u.type == "goblin" and "foe1" or "foe2")
+  local A = ANIM[nm]
+  if A and A.walk and #A.walk > 0 then
+    local anim = (u.moving and A.walk) or A.idle
+    if not anim or #anim == 0 then anim = A.walk end
+    local fps = u.moving and 10 or 5
+    local fi = math.floor(t * fps + u.x * 1.3 + u.lane * 0.7) % #anim + 1
+    local img = anim[fi]
+    local h = 1.5 * cam.s
+    local w = h * img:getWidth() / img:getHeight()
+    local fx = (u.side == "right") and -1 or 1
+    love.graphics.draw(img, x - w / 2 * fx, y - h, 0, fx * w / img:getWidth(), h / img:getHeight())
+    if u.hp < u.max then
+      local bw = 32
+      love.graphics.setColor(0, 0, 0, 0.2); love.graphics.rectangle("fill", x - bw / 2, y - 1.7 * cam.s, bw, 4)
+      local col = u.side == "left" and { 0.24, 0.39, 0.87 } or { 0.9, 0.28, 0.3 }
+      love.graphics.setColor(col); love.graphics.rectangle("fill", x - bw / 2, y - 1.7 * cam.s, bw * (u.hp / u.max), 4); love.graphics.setColor(1, 1, 1)
+    end
+    return
+  end
+  if PART and PART[u.type .. "_head"] then
+    drawRig(u, x, y)
+    if u.hp < u.max then
+      local bw = 32
+      love.graphics.setColor(0, 0, 0, 0.2); love.graphics.rectangle("fill", x - bw / 2, y - 2.6 * cam.s, bw, 4)
+      local col = u.side == "left" and { 0.24, 0.39, 0.87 } or { 0.9, 0.28, 0.3 }
+      love.graphics.setColor(col); love.graphics.rectangle("fill", x - bw / 2, y - 2.6 * cam.s, bw * (u.hp / u.max), 4); love.graphics.setColor(1, 1, 1)
+    end
+    return
+  end
   local img = SPR[u.type]
   local quads = QUAD[u.type]
   if not img or (quads and QUAD[u.type]) then img = SPR[u.type .. "_sheet"] or img end
@@ -109,28 +198,17 @@ local function drawUnit(u)
   local fw = quads and img:getWidth() / 4 or img:getWidth()
   local h = 1.35 * cam.s
   local w = h * fw / img:getHeight()
-  -- 走路/攻击：整体起伏 + 倾斜（先做"会动"，后续换骨骼/帧动画）
-  local t = love.timer.getTime()
-  local moving = u.moving
-  local bob = moving and math.sin(t * 9 + u.x * 1.7 + u.lane * 2.3) * cam.s * 0.07 or 0
-  local lean = moving and math.sin(t * 9 + u.x * 1.7) * 0.05 or 0
-  local attacked = u.cd and u.rate and u.cd > u.rate * 0.82
-  local lunge = attacked and (u.side == "right" and -0.3 or 0.3) * cam.s or 0
-  love.graphics.push()
-  love.graphics.translate(x + lunge, y + bob)
-  love.graphics.rotate(lean)
   local fx = (u.side == "right") and -1 or 1
   local q = nil
   if quads then
-    local frame = u.moving and (math.floor(t * 8 + u.x * 1.7 + u.lane) % 4 + 1) or 1
+    local frame = u.moving and (math.floor(t * 10 + u.x * 1.7 + u.lane) % 4 + 1) or 1
     q = quads[frame]
   end
   if q then
-    love.graphics.draw(img, q, -w / 2 * fx, -h, 0, fx * w / fw, h / img:getHeight())
+    love.graphics.draw(img, q, x - w / 2 * fx, y - h, 0, fx * w / fw, h / img:getHeight())
   else
-    love.graphics.draw(img, -w / 2 * fx, -h, 0, fx * w / fw, h / img:getHeight())
+    love.graphics.draw(img, x - w / 2 * fx, y - h, 0, fx * w / fw, h / img:getHeight())
   end
-  love.graphics.pop()
   -- HP 条
   if u.hp < u.max then
     local bw = 32
