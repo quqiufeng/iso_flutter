@@ -129,7 +129,7 @@ AI 可以在**自己的 LuaJIT 里**直接 `require` 并运行它（`step/act/st
 | **游戏逻辑（Sim）** | **纯 Lua** `iso_engine/lib/lua/game/battle.lua` | 确定性、headless、可回放；**`luajit` 直接跑**（agent 驱动/断言/复现），**同一份**也喂 LÖVE 渲染 |
 | **运行时 / 渲染** | **LÖVE（开源 Lua 2D 引擎）** `game/love/` | LuaJIT + SDL/OpenGL；`love.graphics` GPU 渲染。**集成进本项目**（当运行时用），不是"把我们的东西搬过去" |
 | **GUI 容器** | **Flutter**（`app/`） | **只做窗口/面板/工具**，**不再做游戏渲染**（按用户定） |
-| **角色动画** | **分件 + 逐帧** | 运行时逐帧（`Quad` 循环）+ 分件（body parts）可扩展骨骼；**素材用 CC0 开源包** |
+| **角色动画** | **自建 Lua 骨骼系统** | `iso_engine/lib/lua/rig.lua`：骨骼层级/FK/插槽/附件/关键帧插值(缓动)；**数据/代码定义**、headless 可测、LÖVE 可绘；零授权 |
 | **角色组装** | **paper-doll（已落地）** | `bin/char.sh`：从 CC0 分件按帧组装 → **换武器=换武器件**、**换色=tint**；同帧号叠 body/head/hair/eyes/mouth/horn/hands/feet/weapon/wings |
 | **素材** | **CC0 开源素材包** 为主 | 例：*Free 2D Animated Vector Game Character Sprites*（角色 walk/idle/hit/death + 分件 + 武器 + 地面/岩石，CC0）|
 | **Agent 驱动** | `luajit -e` + 截图 | 无需 MCP/协议：跑 Lua 玩/测；`xdotool`+`import` 截图，agent 自己看 |
