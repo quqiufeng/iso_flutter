@@ -129,14 +129,39 @@ AI 可以在**自己的 LuaJIT 里**直接 `require` 并运行它（`step/act/st
 | **游戏逻辑（Sim）** | **纯 Lua** `iso_engine/lib/lua/game/battle.lua` | 确定性、headless、可回放；**`luajit` 直接跑**（agent 驱动/断言/复现），**同一份**也喂 LÖVE 渲染 |
 | **运行时 / 渲染** | **LÖVE（开源 Lua 2D 引擎）** `game/love/` | LuaJIT + SDL/OpenGL；`love.graphics` GPU 渲染。**集成进本项目**（当运行时用），不是"把我们的东西搬过去" |
 | **GUI 容器** | **Flutter**（`app/`） | **只做窗口/面板/工具**，**不再做游戏渲染**（按用户定） |
-| **角色动画** | **自建 Lua 骨骼系统** | `iso_engine/lib/lua/rig.lua`：骨骼层级/FK/插槽/附件/关键帧插值(缓动)；**数据/代码定义**、headless 可测、LÖVE 可绘；零授权 |
-| **角色组装** | **paper-doll（已落地）** | `bin/char.sh`：从 CC0 分件按帧组装 → **换武器=换武器件**、**换色=tint**；同帧号叠 body/head/hair/eyes/mouth/horn/hands/feet/weapon/wings |
-| **素材** | **CC0 开源素材包** 为主 | 例：*Free 2D Animated Vector Game Character Sprites*（角色 walk/idle/hit/death + 分件 + 武器 + 地面/岩石，CC0）|
+| **角色关键帧** | **Google 图像（Nano Banana / Gemini）** | `bin/img_nano.sh`（经 **apimart.ai**）：以**同一张参考图**逐张出走路关键姿势 → **跨帧角色一致**（当前主力）|
+| **动画 / GIF** | **SD1.5 + AnimateDiff 动画模型** | 本地 `sd-cli -M vid_gen --motion-module mm_sd15_v3`（`/opt/sd`）→ 由关键帧/首帧出 GIF / 视频帧 |
+| **抠图 / 对齐** | **BiRefNet** + ImageMagick | 抠透明背景 → 统一画布、**脚底基线对齐 + 水平居中** → 帧序列（`game/love/assets/nb/*.png`）|
+| **备选素材** | **CC0 paper-doll / 自建 Lua 骨骼** | `bin/char.sh`（分件组装，换武器/染色）、`iso_engine/lib/lua/rig.lua`（自建骨骼，零授权）|
 | **Agent 驱动** | `luajit -e` + 截图 | 无需 MCP/协议：跑 Lua 玩/测；`xdotool`+`import` 截图，agent 自己看 |
 
+**角色素材链路（当前用的方案）**
+```
+参考图(角色形象)
+   │  bin/img_nano.sh --ref  （Google Nano Banana / Gemini，经 apimart.ai）
+   ▼  逐张出「走路周期关键姿势」：contact(左前)/passing/contact(右前)/passing
+关键帧 PNG（白底，跨帧形象一致）
+   │  BiRefNet 抠图 → 统一画布、脚底基线对齐 + 水平居中
+   ▼
+帧序列 knight_walk_0..3.png
+   │  （可选）sd-cli -M vid_gen --motion-module  → 图生 GIF/视频
+   ▼
+LÖVE：角色按 walk 帧循环 → 在等距地图上沿兵线移动
+```
+```bash
+# 关键帧（同一参考图，一致性）
+bin/img_nano.sh "同参考图的骑士…走路 KEYFRAME=CONTACT：左腿前…" --ref ref.png --size 3:4 --res 1K --out out
+# 图生 GIF（本地 AnimateDiff）
+sd-cli -M vid_gen -m sd15.safetensors --vae vae-ft-mse.safetensors \
+  --motion-module mm_sd15_v3.safetensors -i frame.png --video-frames 16 --fps 8 -o out.avi
+```
+
 **关键教训**
-- **动画素材不能靠 SD 自动生成**：一致性/分层不保证（实测帧表出成 3×4 网格、分件糊成一团）→ **用现成 CC0 素材包 / 手工 / 矢量烘焙**。
-- 我们**自己的引擎仍负责"图表/矢量插画"**（iso.sh，`iso_engine`）；**游戏**则交给 LÖVE。
+- **关键帧一致性靠"同一参考图"**：Nano Banana 给同一张角色参考图、逐张出姿势，实测**跨帧形象高度一致**（contact/passing 互换无误）→ 是当前做角色的主力。
+- **本地图生动画**：`/opt/sd` 的 `sd-cli` 支持 AnimateDiff（`-M vid_gen --motion-module`），能从关键帧/首帧出 GIF；但该分支**不接 ControlNet**（不能姿态驱动），单图只出**轻微运动** → **受控动作仍靠"逐张关键帧"**。
+- Wan 视频（gguf 5D）在本仓库跑不了：ggml `GGML_MAX_DIMS==4`。
+- 早期"自建骨骼/单图网格蒙皮"能做**受控**动作但形象一般（无 GUI 手调）；现以 **AI 关键帧**为主。
+- 我们**自己的引擎仍负责"图表/矢量插画"**（iso.sh，`iso_engine`）；**游戏**交给 LÖVE。
 
 **数据流**
 ```
@@ -170,6 +195,8 @@ Agent（my-agent）写 Lua(Sim + 场景/素材)
 |---|---|---|
 | **矢量等距图**（场景/物件/角色/UI）| `bin/iso.sh`（+ `iso_engine`）| **代码生成**（Lua/Dart）；AI 可直接写 → 无需美术 |
 | **位图素材**（贴图/精灵/道具/图标）| `bin/img.sh` | 基于 `/opt/static_comfyui` 的 `backup.sh`（Z-Image Turbo）+ BiRefNet **抠图**；素材档尺寸预设 + 透明背景 + LoRA 风格 |
+| **角色关键帧**（AI 手绘卡通）| `bin/img_nano.sh` | **Nano Banana**（Google Gemini 图像，经 **apimart.ai**）：`--ref` 参考图一致性、`--size/--res/--n`；密钥 `~/.env: APIMART_API_KEY`；`bin/cutparts.sh` 切件 |
+| **图生动画 / GIF** | `sd-cli -M vid_gen`（`/opt/sd`）| **SD1.5 + AnimateDiff** motion module（`mm_sd15_v3`）+ `vae-ft-mse`；`--video-frames/--fps` → avi/gif |
 | **语音/配音** | `bin/tts.sh` | sherpa-onnx + **Kokoro**（中/英多音色）→ wav/mp3；可指定 **CosyVoice3 克隆音色** |
 
 ```bash

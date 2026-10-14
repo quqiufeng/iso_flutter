@@ -41,13 +41,15 @@ POSE=${POSE:-tpose}          # tpose | apose
 HAND_Y=${HAND_Y:-0.90}       # apose：手底（臂区下沿）
 ARM_INSET=${ARM_INSET:-0.03} # apose：臂区与躯干的重叠量（相对 W）
 ARM_OUT=${ARM_OUT:-0.0}      # apose：臂区外缘（裁掉外侧披风/装饰；相对 W）
+OVERLAP=${OVERLAP:-0.03}     # 相邻分件重叠（相对 H）——避免露缝/切掉
 
 declare -A X0 X1 Y0 Y1 PVX PVY
-# head
-X0[head]=$((cx-headHW)); X1[head]=$((cx+headHW)); Y0[head]=0; Y1[head]=$neck
+ov=$(px "$H*$OVERLAP")
+# head（下沿盖过脖线）
+X0[head]=$((cx-headHW)); X1[head]=$((cx+headHW)); Y0[head]=0; Y1[head]=$((neck+ov))
 PVX[head]=$((cx-X0[head])); PVY[head]=$neck
-# torso
-X0[torso]=$((cx-torsoHW)); X1[torso]=$((cx+torsoHW)); Y0[torso]=$neck; Y1[torso]=$hipY
+# torso（上顶脖线、下盖过髋线）
+X0[torso]=$((cx-torsoHW)); X1[torso]=$((cx+torsoHW)); Y0[torso]=$neck; Y1[torso]=$((hipY+ov))
 PVX[torso]=$((cx-X0[torso])); PVY[torso]=$((hipY-neck))
 # arms
 if [ "$POSE" = apose ]; then

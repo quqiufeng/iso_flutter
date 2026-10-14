@@ -8,6 +8,7 @@ package.path = root .. "/iso_engine/lib/lua/game/?.lua;" .. root .. "/iso_engine
 
 local battle = require("battle")
 local rig = require("rig")
+local skin = require("skin")
 
 -- 加载 CC0 角色帧（game/love/assets/chars/<name>_<anim>_<i>.png）
 ANIM = {}
@@ -24,13 +25,27 @@ local function loadAnim(name, anim, maxf)
 end
 
 -- 从真实路径读图（LÖVE 11 无 mountFullPath → io 读字节 + newFileData）
-function loadImage(path)
+function loadImage(path, mip)
   local f = io.open(path, "rb")
   if not f then return nil end
   local data = f:read("*a")
   f:close()
-  local ok, img = pcall(love.graphics.newImage, love.filesystem.newFileData(data, "sprite.png"))
+  local ok, img = pcall(love.graphics.newImage, love.filesystem.newFileData(data, "sprite.png"), mip and { mipmaps = true } or nil)
   return ok and img or nil
+end
+
+-- Nano Banana 关键帧动画（game/love/assets/nb/<name>_<anim>_<i>.png）
+NBANIM = {}
+local function loadNbAnim(name, anim, maxf)
+  local list = {}
+  for i = 0, maxf - 1 do
+    local img = loadImage(root .. "/game/love/assets/nb/" .. name .. "_" .. anim .. "_" .. i .. ".png", true)
+    if not img then break end
+    img:setFilter("linear", "linear")
+    img:setMipmapFilter("linear")
+    list[#list + 1] = img
+  end
+  if #list > 0 then NBANIM[name] = NBANIM[name] or {}; NBANIM[name][anim] = list end
 end
 
 local CA, SA, SE, CE, U = 0.70710678, 0.70710678, 0.5, 0.86602540, 1.2649110640673518
@@ -90,8 +105,78 @@ local function drawRigUnit(u, x, y)
   R:draw(x, y, 2.0 * cam.s / 1808, u.side == "right")
 end
 
+-- 单图网格蒙皮（skin.lua）：整张骑士图不切、按骨骼平滑形变（无切痕）
+local SKINDEF, SKIN_HPX, SKIN_HPY, SKIN_H
+local function buildKnightSkin()
+  local img = loadImage(root .. "/example/rig-knight/knight_half.png")
+  if img then img:setFilter("linear", "linear") end
+  if not img then return end
+  local s = 0.5
+  local hipX, hipY = 825 * s, 1666 * s            -- 髋（图像坐标）
+  local neckX, neckY = 825 * s, 1160 * s
+  local shLX, shLY = 577 * s, 1250 * s
+  local shRX, shRY = 1073 * s, 1250 * s
+  SKIN_HPX, SKIN_HPY = hipX, hipY + 199           -- 脚底（图像坐标）
+  SKIN_H = 1810 * s
+  SKINDEF = {
+    image = img,
+    bbox = { x = 308 * s, y = 256 * s, w = 1036 * s, h = 1810 * s },
+    grid = { 16, 22 }, radius = 200 * s, power = 2, maxInfl = 4,
+    bones = {
+      { name = "root", x = hipX, y = hipY + 199 },
+      { name = "spine", parent = "root",  x = 0, y = -199 },
+      { name = "chest", parent = "spine", x = 0, y = -253 },
+      { name = "head",  parent = "chest", x = 0, y = 0 },
+      { name = "armL",  parent = "chest", x = -124, y = 45 },
+      { name = "armR",  parent = "chest", x = 124,  y = 45 },
+      { name = "legL",  parent = "spine", x = -51,  y = 0 },
+      { name = "legR",  parent = "spine", x = 51,   y = 0 },
+    },
+    segs = {
+      root  = { hipX, hipY + 200, hipX, hipY + 225 },
+      spine = { hipX, hipY, neckX, neckY + 20 },
+      chest = { hipX, (hipY + neckY) / 2, neckX, neckY },
+      head  = { neckX, neckY, neckX, neckY - 210 },
+      armL  = { shLX, shLY, shLX - 45, shLY + 260 },
+      armR  = { shRX, shRY, shRX + 45, shRY + 260 },
+      legL  = { hipX - 51, hipY, hipX - 60, hipY + 200 },
+      legR  = { hipX + 51, hipY, hipX + 60, hipY + 200 },
+    },
+    clips = {
+      idle = { duration = 2.4, loop = true, bones = {
+        spine = { { t = 0, y = -199 }, { t = 1.2, y = -201 }, { t = 2.4, y = -199 } },
+        armL  = { { t = 0, rot = 0.04 }, { t = 1.2, rot = 0.09 }, { t = 2.4, rot = 0.04 } },
+        armR  = { { t = 0, rot = -0.04 }, { t = 1.2, rot = -0.09 }, { t = 2.4, rot = -0.04 } },
+      } },
+      walk = { duration = 0.72, loop = true, bones = {
+        spine = { { t = 0, y = -199 }, { t = 0.18, y = -203, ease = "out" }, { t = 0.36, y = -199, ease = "in_" }, { t = 0.54, y = -203, ease = "out" }, { t = 0.72, y = -199, ease = "in_" } },
+        chest = { { t = 0, rot = 0.04 }, { t = 0.36, rot = -0.04 }, { t = 0.72, rot = 0.04 } },
+        armL  = { { t = 0, rot = -0.4 }, { t = 0.36, rot = 0.4 }, { t = 0.72, rot = -0.4 } },
+        armR  = { { t = 0, rot = 0.4 }, { t = 0.36, rot = -0.4 }, { t = 0.72, rot = 0.4 } },
+        legL  = { { t = 0, rot = 0.2 }, { t = 0.36, rot = -0.2 }, { t = 0.72, rot = 0.2 } },
+        legR  = { { t = 0, rot = -0.2 }, { t = 0.36, rot = 0.2 }, { t = 0.72, rot = -0.2 } },
+      } },
+    },
+  }
+end
+
+local SKINU = setmetatable({}, { __mode = "k" })
+local function drawSkinUnit(u, x, y)
+  local S = SKINU[u]
+  if not S then
+    S = skin.new(SKINDEF); SKINU[u] = S
+    u.phase = (u.x * 0.7 + u.lane * 1.3)
+  end
+  local clip = u.moving and "walk" or "idle"
+  S:setClip(clip, { time = (love.timer.getTime() + u.phase) % SKINDEF.clips[clip].duration })
+  S:deform()
+  local sc = 2.0 * cam.s / SKIN_H
+  S:draw(x - SKIN_HPX * sc, y - SKIN_HPY * sc, sc, u.side == "right")
+end
+
 -- 等距投影（地面 x,y → 屏幕相对）
-local function iso(x, y) return (x * CA - y * SA) * U, (x * SA + y * CA) * SE * U end
+local FY = 0.78  -- 竖向压扁（俯视 3/4）
+local function iso(x, y) return x, y * FY end
 
 cam = { ox = 0, oy = 0, s = 40 }
 local function sx(x, y) local a, b = iso(x, y); return cam.ox + a * cam.s, cam.oy + b * cam.s end
@@ -132,16 +217,33 @@ local QUAD = {}
 local function fit()
   local w, h = love.graphics.getDimensions()
   local cols, rows = game.cols, game.rows
-  local span = (cols + rows) * CA * U
-  cam.s = math.min(w * 0.92 / span, h * 0.92 / (span * 0.6))
-  cam.ox = w / 2 - ((cols - 1) / 2 * CA - (rows - 1) / 2 * SA) * U * cam.s
-  cam.oy = h / 2 - ((cols - 1) / 2 * SA + (rows - 1) / 2 * CA) * SE * U * cam.s + cam.s * 1.2
+  cam.s = math.min(w * 0.88 / cols, h * 0.98 / (rows * FY))  -- 战场铺满屏幕（留边给两塔）
+  cam.ox = w / 2 - cols / 2 * cam.s
+  cam.oy = h / 2 - rows * FY / 2 * cam.s
 end
 
 local sel = "sword"
 local TYPESEL = { ["1"] = "sword", ["2"] = "archer", ["3"] = "mage" }
 -- 兵种 → 分件组装角色（char.sh 生成；可换武器 + 染色）
 local CHARMAP = { sword = "u1", archer = "u2", mage = "u3", goblin = "e1", shooter = "e2", ogre = "e3" }
+-- 兵种 → Nano Banana 关键帧角色（assets/nb/<name>_<anim>_<i>.png）
+local NBMAP = { sword = "knight", archer = "knight", mage = "knight", goblin = "knight", shooter = "knight", ogre = "knight" }
+
+-- NB 关键帧动画：走/站，取对应帧表循环
+local function drawNBUnit(u, x, y, name)
+  local A = NBANIM[name]
+  if not A then return false end
+  local list = (u.moving and A.walk) or A.idle or A.walk
+  if not list or #list == 0 then return false end
+  local fps = u.moving and 10 or 8
+  local fi = math.floor(love.timer.getTime() * fps + u.x * 1.3 + u.lane * 0.7) % #list + 1
+  local img = list[fi]
+  local h = 1.9 * cam.s
+  local w = h * img:getWidth() / img:getHeight()
+  local fx = (u.side == "right") and -1 or 1
+  love.graphics.draw(img, x - w / 2 * fx, y - h, 0, fx * w / img:getWidth(), h / img:getHeight())
+  return true
+end
 
 function love.load()
   love.graphics.setBackgroundColor(0.94, 0.94, 0.92)
@@ -155,10 +257,12 @@ function love.load()
   end
   loadSprites()
   loadRigDef()
+  buildKnightSkin()
   for _, nm in ipairs({ "u1", "u2", "u3", "e1", "e2", "e3" }) do
     loadAnim(nm, "walk", 12); loadAnim(nm, "idle", 12); loadAnim(nm, "hit", 6); loadAnim(nm, "death", 12)
   end
-  game = battle.new()
+  loadNbAnim("knight", "walk", 4); loadNbAnim("knight", "idle", 4)
+  game = battle.new({ cols = 10, rows = 8 })
   fit()
 end
 
@@ -169,16 +273,14 @@ end
 
 function love.keypressed(k)
   if TYPESEL[k] then sel = TYPESEL[k] end
-  if k == "r" then game = battle.new(); fit() end
+  if k == "r" then game = battle.new({ cols = 10, rows = 8 }); fit() end
 end
 
 function love.mousepressed(mx, my, btn)
   if btn ~= 1 or game.over then return end
   -- 屏幕 → 地面（逆等距）
-  local a = (mx - cam.ox) / (cam.s * U)
-  local b = (my - cam.oy) / (cam.s * U * SE)
-  local gx = a * CA + b * SA
-  local gy = -a * SA + b * CA
+  local gx = (mx - cam.ox) / cam.s
+  local gy = (my - cam.oy) / (cam.s * FY)
   if gx < game.cols / 2 then
     game:deploy(math.max(0, math.min(game.rows - 1, math.floor(gy + 0.5))), sel)
   end
@@ -221,7 +323,29 @@ end
 local function drawUnit(u)
   local x, y = sx(u.x, u.lane)
   local t = love.timer.getTime()
-  -- 骨骼骑士（Nano Banana 母图 → cutparts 切件 → 绑骨）
+  -- Nano Banana 关键帧（最高优先级）
+  local nbn = NBMAP[u.type]
+  if nbn and drawNBUnit(u, x, y, nbn) then
+    if u.hp < u.max then
+      local bw = 32
+      love.graphics.setColor(0, 0, 0, 0.2); love.graphics.rectangle("fill", x - bw / 2, y - 2.4 * cam.s, bw, 4)
+      local col = u.side == "left" and { 0.24, 0.39, 0.87 } or { 0.9, 0.28, 0.3 }
+      love.graphics.setColor(col); love.graphics.rectangle("fill", x - bw / 2, y - 2.4 * cam.s, bw * (u.hp / u.max), 4); love.graphics.setColor(1, 1, 1)
+    end
+    return
+  end
+  -- 骨骼骑士（单图网格蒙皮，skin.lua）
+  if SKINDEF then
+    drawSkinUnit(u, x, y)
+    if u.hp < u.max then
+      local bw = 32
+      love.graphics.setColor(0, 0, 0, 0.2); love.graphics.rectangle("fill", x - bw / 2, y - 1.7 * cam.s, bw, 4)
+      local col = u.side == "left" and { 0.24, 0.39, 0.87 } or { 0.9, 0.28, 0.3 }
+      love.graphics.setColor(col); love.graphics.rectangle("fill", x - bw / 2, y - 1.7 * cam.s, bw * (u.hp / u.max), 4); love.graphics.setColor(1, 1, 1)
+    end
+    return
+  end
+  -- 备用：刚性分件骨骼
   if RIGDEF then
     drawRigUnit(u, x, y)
     if u.hp < u.max then
@@ -292,17 +416,26 @@ local function drawUnit(u)
 end
 
 function love.draw()
-  -- 地面网格
-  love.graphics.setColor(0.81, 0.88, 0.77)
-  for c = 0, game.cols - 1 do
-    for r = 0, game.rows - 1 do
-      local pts = {}
+  -- 地面：向四周多铺 PAD 格，铺满整个窗口（战场内棋盘格 + 场外暗一档）
+  local PAD = 7
+  for c = -PAD, game.cols - 1 + PAD do
+    for r = -PAD, game.rows - 1 + PAD do
+      local inPlay = c >= 0 and c < game.cols and r >= 0 and r < game.rows
+      if not inPlay then
+        love.graphics.setColor(0.70, 0.77, 0.66)
+      elseif (c + r) % 2 == 0 then
+        love.graphics.setColor(0.84, 0.91, 0.79)
+      else
+        love.graphics.setColor(0.80, 0.87, 0.75)
+      end
       local q = { { c, r }, { c + 1, r }, { c + 1, r + 1 }, { c, r + 1 } }
+      local pts = {}
       for _, p in ipairs(q) do local X, Y = sx(p[1], p[2]); pts[#pts + 1] = X; pts[#pts + 1] = Y end
       love.graphics.polygon("fill", pts)
     end
   end
-  love.graphics.setColor(0.6, 0.65, 0.57)
+  -- 战场网格线
+  love.graphics.setColor(0.62, 0.67, 0.58)
   for c = 0, game.cols do local x1, y1 = sx(c, 0); local x2, y2 = sx(c, game.rows); love.graphics.line(x1, y1, x2, y2) end
   for r = 0, game.rows do local x1, y1 = sx(0, r); local x2, y2 = sx(game.cols, r); love.graphics.line(x1, y1, x2, y2) end
   love.graphics.setColor(1, 1, 1)
@@ -311,9 +444,9 @@ function love.draw()
   for _, s in ipairs({ { true, "castle_blue" }, { false, "castle_red" } }) do
     local img = SPR[s[2]]
     if img then
-      local bx = s[1] and -0.45 or game.cols - 0.55
-      local X, Y = sx(bx + 0.5, game.rows / 2)
-      local h = 6.2 * cam.s
+      local bx = s[1] and -0.4 or game.cols - 0.6
+      local X, Y = sx(bx, game.rows / 2)
+      local h = 3.0 * cam.s
       local w = h * img:getWidth() / img:getHeight()
       love.graphics.draw(img, X - w / 2, Y - h, 0, w / img:getWidth(), h / img:getHeight())
     end
