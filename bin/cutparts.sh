@@ -25,7 +25,7 @@ HIP_Y=${HIP_Y:-0.70}     # 髋高（=躯干底 / 腿顶）
 [ -f "$char" ] || { echo "找不到: $char" >&2; exit 1; }
 mkdir -p "$out"
 
-geo=$(convert "$char" -format "%@" info: 2>/dev/null)
+geo=$(convert "$char" -fuzz "${BBOX_FUZZ:-8%}" -format "%@" info: 2>/dev/null)
 W=${geo%%x*}; _r=${geo#*x}; H=${_r%%+*}; _xy=${_r#*+}; OFFX=${_xy%%+*}; OFFY=${_xy##*+}
 [ -n "${W:-}" ] || { echo "无法取 bbox" >&2; exit 1; }
 convert "$char" -crop "${W}x${H}+${OFFX}+${OFFY}" +repage "$out/_char.png"
@@ -37,6 +37,11 @@ headHW=$(px "$W*$HEAD_HW"); torsoHW=$(px "$W*$TORSO_HW"); shoHW=$(px "$W*$SHO_HW
 hipY=$(px "$H*$HIP_Y"); armH=$(px "$H*$ARM_H")
 armY0=$((shoY-armH/2)); armY1=$((shoY+armH/2))
 
+POSE=${POSE:-tpose}          # tpose | apose
+HAND_Y=${HAND_Y:-0.90}       # apose：手底（臂区下沿）
+ARM_INSET=${ARM_INSET:-0.03} # apose：臂区与躯干的重叠量（相对 W）
+ARM_OUT=${ARM_OUT:-0.0}      # apose：臂区外缘（裁掉外侧披风/装饰；相对 W）
+
 declare -A X0 X1 Y0 Y1 PVX PVY
 # head
 X0[head]=$((cx-headHW)); X1[head]=$((cx+headHW)); Y0[head]=0; Y1[head]=$neck
@@ -44,11 +49,19 @@ PVX[head]=$((cx-X0[head])); PVY[head]=$neck
 # torso
 X0[torso]=$((cx-torsoHW)); X1[torso]=$((cx+torsoHW)); Y0[torso]=$neck; Y1[torso]=$hipY
 PVX[torso]=$((cx-X0[torso])); PVY[torso]=$((hipY-neck))
-# arms（左：0..肩；右：肩..W）
-X0[armL]=0; X1[armL]=$((cx-shoHW)); Y0[armL]=$armY0; Y1[armL]=$armY1
-PVX[armL]=$((cx-shoHW-X0[armL])); PVY[armL]=$((shoY-armY0))
-X0[armR]=$((cx+shoHW)); X1[armR]=$W; Y0[armR]=$armY0; Y1[armR]=$armY1
-PVX[armR]=0; PVY[armR]=$((shoY-armY0))
+# arms
+if [ "$POSE" = apose ]; then
+  hy=$(px "$H*$HAND_Y"); ins=$(px "$W*$ARM_INSET"); ox=$(px "$W*$ARM_OUT")
+  X0[armL]=$ox; X1[armL]=$((cx-torsoHW+ins)); Y0[armL]=$shoY; Y1[armL]=$hy
+  PVX[armL]=$((cx-shoHW-X0[armL])); PVY[armL]=$((shoY-Y0[armL]))
+  X0[armR]=$((cx+torsoHW-ins)); X1[armR]=$((W-ox)); Y0[armR]=$shoY; Y1[armR]=$hy
+  PVX[armR]=$((cx+shoHW-X0[armR])); PVY[armR]=$((shoY-Y0[armR]))
+else
+  X0[armL]=0; X1[armL]=$((cx-shoHW)); Y0[armL]=$armY0; Y1[armL]=$armY1
+  PVX[armL]=$((cx-shoHW-X0[armL])); PVY[armL]=$((shoY-armY0))
+  X0[armR]=$((cx+shoHW)); X1[armR]=$W; Y0[armR]=$armY0; Y1[armR]=$armY1
+  PVX[armR]=0; PVY[armR]=$((shoY-armY0))
+fi
 # legs（左：中左；右：中右）
 X0[legL]=$((cx-torsoHW)); X1[legL]=$cx; Y0[legL]=$hipY; Y1[legL]=$H
 PVX[legL]=$(((cx-torsoHW+cx)/2-X0[legL])); PVY[legL]=0
@@ -59,9 +72,9 @@ json=""
 for p in head torso armL armR legL legR; do
   x0=${X0[$p]}; x1=${X1[$p]}; y0=${Y0[$p]}; y1=${Y1[$p]}
   w=$((x1-x0)); h=$((y1-y0)); { [ "$w" -gt 0 ] && [ "$h" -gt 0 ]; } || { echo "空区域 $p" >&2; continue; }
-  convert -size "${W}x${H}" xc:black -fill white -draw "rectangle $x0,$y0 $((x1-1)),$((y1-1))" "$out/_reg.png"
-  convert "$out/_alpha.png" "$out/_reg.png" -compose multiply -composite "$out/_pa.png"
-  convert "$out/_char.png" \( "$out/_pa.png" \) -alpha off -compose CopyOpacity -composite \
+  convert -size "${W}x${H}" xc:none -fill white -draw "rectangle $x0,$y0 $((x1-1)),$((y1-1))" "$out/_reg.png"
+  convert "$out/_char.png" "$out/_reg.png" -compose DstIn -composite \
+          -channel A -threshold "${ALPHA_CUT:-35%}" +channel \
           -crop "${w}x${h}+${x0}+${y0}" +repage "$out/$p.png"
   json="$json\"$p\":{\"file\":\"$p.png\",\"x\":$x0,\"y\":$y0,\"w\":$w,\"h\":$h,\"pivotX\":${PVX[$p]},\"pivotY\":${PVY[$p]}}"
   [ "$p" != "legR" ] && json="$json,"
