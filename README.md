@@ -1,4 +1,6 @@
-# iso_flutter — 等距解释图（native：Dart + Lua）
+# iso_flutter
+
+> **native 等距解释图/动画引擎**：Dart + Lua 双引擎（等价），Flutter 离屏渲染出 PNG/GIF/MP4 —— 无浏览器、无 node、无 JS。
 
 把 anatomy（等距插画）的引擎**全量移植为 Dart 与 Lua 两份等价实现**，在 **Flutter 里离屏渲染**出
 **PNG / GIF / MP4**（发微信），并可与用户交互（拖拽开盖、实时特效）。**无浏览器、无 node、无 JS。**
