@@ -11,6 +11,28 @@ local function loadImage(path, mip)
   return ok and img or nil
 end
 
+-- ===== 截图钩子 =====（消行动画触发时自动连拍；CAPTURE_DIR 启用）
+local CAP_DIR = os.getenv("CAPTURE_DIR")
+local CAP_FRAMES = tonumber(os.getenv("CAPTURE_FRAMES") or "36")
+local AUTO = os.getenv("AUTO")                     -- 设了=AUTO 让 AI 自动玩（无人值守抓消行）
+local capLeft, capName, capStarted = 0, "cap", false
+local aiT = 0
+local function capBegin(name)
+  if not CAP_DIR then return end
+  capName, capLeft = name or "cap", CAP_FRAMES
+  if not capStarted then os.execute("mkdir -p '" .. CAP_DIR .. "'"); capStarted = true end
+end
+local function capFrame()
+  if capLeft <= 0 or not CAP_DIR then return end
+  local n = CAP_FRAMES - capLeft
+  capLeft = capLeft - 1
+  love.graphics.captureScreenshot(function(img)
+    local fd = img:encode("png")
+    local f = io.open(CAP_DIR .. "/" .. capName .. string.format("_%03d.png", n), "wb")
+    if f then f:write(fd:getString()); f:close() end
+  end)
+end
+
 local COLS, ROWS = 10, 20
 local TYPES = { "i", "o", "t", "s", "z", "j", "l" }
 local SHAPES = {
@@ -100,6 +122,7 @@ local function lock()
     if full then cleared[#cleared + 1] = y end
   end
   if #cleared > 0 then
+    capBegin("line")                               -- 消行 → 自动连拍
     -- 闪光 + 碎晶粒子
     for _, y in ipairs(cleared) do
       flashes[#flashes + 1] = { y = y, t = 0, life = 0.35 }
@@ -148,6 +171,46 @@ local function ghostY()
   return y
 end
 
+-- 简单 AI：枚举 旋转×落点，按「聚合高度/空洞/凹凸/消行」启发式选最优
+local function evalOcc(occ)
+  local h = {}
+  for c = 1, COLS do local v = 0; for r = 1, ROWS do if occ[r][c] then v = ROWS - r + 1; break end end h[c] = v end
+  local agg, holes, bump = 0, 0, 0
+  for c = 1, COLS do agg = agg + h[c]
+    local solid = false
+    for r = 1, ROWS do if occ[r][c] then solid = true elseif solid then holes = holes + 1 end end
+  end
+  for c = 1, COLS - 1 do bump = bump + math.abs(h[c] - h[c + 1]) end
+  local lines = 0
+  for r = 1, ROWS do local full = true; for c = 1, COLS do if not occ[r][c] then full = false; break end end if full then lines = lines + 1 end end
+  return -(0.51 * agg + 0.76 * holes + 0.18 * bump) + 0.76 * lines
+end
+
+local function aiBest()
+  local best, bm, bx = -1e9, nil, nil
+  local m = cur.m
+  for _ = 0, 3 do
+    for x = 1, COLS do
+      if not collide(m, x, cur.y) then
+        local y = cur.y
+        while not collide(m, x, y + 1) do y = y + 1 end
+        local occ = {}
+        for r = 1, ROWS do occ[r] = {}; for c = 1, COLS do occ[r][c] = board[r][c] end end
+        local okp = true
+        for r = 1, #m do for c = 1, #m[r] do
+          if m[r][c] == 1 then
+            local yy, xx = y + r - 1, x + c - 1
+            if yy < 1 or yy > ROWS or xx < 1 or xx > COLS then okp = false else occ[yy][xx] = true end
+          end
+        end end
+        if okp then local s = evalOcc(occ); if s > best then best, bm, bx = s, m, x end end
+      end
+    end
+    m = rotCW(m)
+  end
+  return bm, bx
+end
+
 local function hardDrop()
   local gy = ghostY()
   local d = gy - cur.y
@@ -179,6 +242,7 @@ function love.load()
 end
 
 function love.keypressed(k)
+  if k == "f2" then capBegin("manual"); return end
   if k == "r" then reset(); return end
   if over then return end
   if k == "p" then paused = not paused; return end
@@ -203,6 +267,14 @@ function love.update(d)
   shake = math.max(0, shake - d * 40)
   lineFlash = math.max(0, lineFlash - d)
   if over or paused then return end
+  if AUTO then                                    -- AI 自动玩（无人值守抓消行）
+    aiT = aiT - d
+    if aiT <= 0 then
+      local bm, bx = aiBest()
+      if bm and bx then cur.m, cur.x = bm, bx; hardDrop() end
+      aiT = 0.2
+    end
+  end
   fallT = fallT + d
   if fallT >= fallInterval then
     fallT = fallT - fallInterval
@@ -351,4 +423,5 @@ function love.draw()
     love.graphics.printf("按 R 重开", 0, h / 2 + 40, w, "center")
   end
   love.graphics.setColor(1, 1, 1)
+  capFrame()                                      -- 截图钩子：连拍中
 end

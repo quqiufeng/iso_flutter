@@ -34,6 +34,30 @@ function loadImage(path, mip)
   return ok and img or nil
 end
 
+-- ===== 截图钩子 =====
+-- CAPTURE_DIR 启用后：动画/技能触发时自动连拍 N 帧到该目录（省去手动掐时间）；
+-- CAPTURE_FRAMES 帧数（默认 40）；AUTO=ult|whirl 自动布兵并触发该技能（无人值守抓图）。
+local CAP_DIR = os.getenv("CAPTURE_DIR")
+local CAP_FRAMES = tonumber(os.getenv("CAPTURE_FRAMES") or "40")
+local AUTO = os.getenv("AUTO")
+local autoT = AUTO and 1.2 or nil               -- AUTO 模式：此时刻自动布兵并触发技能
+local capLeft, capName, capStarted = 0, "cap", false
+local function capBegin(name)
+  if not CAP_DIR then return end
+  capName, capLeft = name or "cap", CAP_FRAMES
+  if not capStarted then os.execute("mkdir -p '" .. CAP_DIR .. "'"); capStarted = true end
+end
+local function capFrame()
+  if capLeft <= 0 or not CAP_DIR then return end
+  local n = CAP_FRAMES - capLeft
+  capLeft = capLeft - 1
+  love.graphics.captureScreenshot(function(img)
+    local fd = img:encode("png")
+    local f = io.open(CAP_DIR .. "/" .. capName .. string.format("_%03d.png", n), "wb")
+    if f then f:write(fd:getString()); f:close() end
+  end)
+end
+
 -- Nano Banana 关键帧动画（game/love/assets/nb/<name>_<anim>_<i>.png）
 NBANIM = {}
 local function loadNbAnim(name, anim, maxf)
@@ -297,6 +321,31 @@ local function drawNBUnit(u, x, y, name)
   return true
 end
 
+local function fireUlt()
+  if not game:ultimate() then return end          -- 大招：全体敌方受创
+  local lead
+  for _, u in ipairs(game.units) do
+    if u.side == "left" and u.hp > 0 and (not lead or u.x > lead.x) then lead = u end
+  end
+  local x, y
+  if lead then lead._castUlt = ULT_DUR; x, y = sx(lead.x, lead.lane)
+  else x, y = sx(1, game.rows / 2) end
+  ULT_FX = { x = x, y = y, t = 0, life = ULT_DUR, sparks = {} }
+  for k2 = 1, 18 do
+    local ang = love.math.random() * 6.283
+    ULT_FX.sparks[k2] = { dx = math.cos(ang), dy = math.sin(ang) * FY, s = 1.5 + love.math.random() * 2.5 }
+  end
+  capBegin("ult")
+end
+
+local function fireWhirl()
+  if not game:whirlwind() then return end         -- 旋转挥刀：全体我方单位旋风斩
+  for _, u in ipairs(game.units) do
+    if u.side == "left" and u.hp > 0 then u._whirl = WHIRL_DUR end
+  end
+  capBegin("whirl")
+end
+
 function love.load()
   love.graphics.setBackgroundColor(0.94, 0.94, 0.92)
   -- 中文字体（仓耳今楷）
@@ -322,6 +371,15 @@ end
 function love.update(d)
   if game.over then return end
   game:step(d)
+  -- AUTO 无人值守抓图：到点自动布兵并触发技能
+  if autoT then
+    autoT = autoT - d
+    if autoT <= 0 then
+      for i = 1, 5 do game:deploy(math.min(game.rows - 1, i - 1), "sword") end
+      if AUTO == "ult" then fireUlt() elseif AUTO == "whirl" then fireWhirl() end
+      autoT = nil
+    end
+  end
   -- 伤害事件 → 受击闪红 + 飘伤害数字
   for _, u in ipairs(game.units) do
     local lh = u._lastHp
@@ -353,28 +411,10 @@ end
 function love.keypressed(k)
   if TYPESEL[k] then sel = TYPESEL[k] end
   if k == "r" then game = battle.new({ cols = 10, rows = 8 }); fit(); POPS = {}; ULT_FX = nil; FLASH_T = 0; SHAKE = 0 end
-  if (k == "space" or k == "q") and not game.over then
-    if game:ultimate() then                        -- 大招：全体敌方受创
-      local lead
-      for _, u in ipairs(game.units) do
-        if u.side == "left" and u.hp > 0 and (not lead or u.x > lead.x) then lead = u end
-      end
-      local x, y
-      if lead then lead._castUlt = ULT_DUR; x, y = sx(lead.x, lead.lane)
-      else x, y = sx(1, game.rows / 2) end
-      ULT_FX = { x = x, y = y, t = 0, life = ULT_DUR, sparks = {} }
-      for k2 = 1, 18 do
-        local ang = love.math.random() * 6.283
-        ULT_FX.sparks[k2] = { dx = math.cos(ang), dy = math.sin(ang) * FY, s = 1.5 + love.math.random() * 2.5 }
-      end
-    end
-  end
-  if k == "w" and not game.over then                       -- 旋转挥刀：全体我方单位旋风斩
-    if game:whirlwind() then
-      for _, u in ipairs(game.units) do
-        if u.side == "left" and u.hp > 0 then u._whirl = WHIRL_DUR end
-      end
-    end
+  if k == "f2" then capBegin("manual") end
+  if not game.over then
+    if k == "space" or k == "q" then fireUlt()
+    elseif k == "w" then fireWhirl() end
   end
 end
 
@@ -637,4 +677,5 @@ function love.draw()
     love.graphics.print(game.winner == "left" and "我方胜利！" or "基地失守…", 12, 60)
   end
   love.graphics.setColor(1, 1, 1)
+  capFrame()                                   -- 截图钩子：连拍中
 end
