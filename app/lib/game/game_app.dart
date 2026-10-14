@@ -7,6 +7,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import 'package:iso_engine/iso_kit.dart';
+import 'package:iso_engine/iso_lathe.dart';
 import 'package:iso_engine/iso_render.dart';
 
 import 'iso.dart';
@@ -20,7 +21,7 @@ class GameApp extends StatefulWidget {
 
 class _GameState extends State<GameApp> with SingleTickerProviderStateMixin {
   final World world = World();
-  final Camera cam = Camera(scale: 12);
+  final IsoCam cam = IsoCam(scale: 12);
   final FocusNode _focus = FocusNode();
   final Set<LogicalKeyboardKey> _keys = {};
   final Palette pal = Palette.light;
@@ -123,7 +124,7 @@ class _GameState extends State<GameApp> with SingleTickerProviderStateMixin {
             child: LayoutBuilder(builder: (ctx, cons) {
               cam.cx = cons.maxWidth / 2;
               cam.cy = cons.maxHeight / 2;
-              return CustomPaint(painter: _GamePainter(world, cam, pal));
+              return CustomPaint(size: Size(cons.maxWidth, cons.maxHeight), painter: _GamePainter(world, cam, pal));
             }),
           ),
         ),
@@ -135,7 +136,7 @@ class _GameState extends State<GameApp> with SingleTickerProviderStateMixin {
 class _GamePainter extends CustomPainter {
   _GamePainter(this.world, this.cam, this.pal);
   final World world;
-  final Camera cam;
+  final IsoCam cam;
   final Palette pal;
 
   @override

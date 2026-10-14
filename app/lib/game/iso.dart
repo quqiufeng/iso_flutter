@@ -3,8 +3,8 @@ import 'package:iso_engine/iso_kit.dart';
 
 const double _sinA = 0.70710678, _cosA = 0.70710678, _sinE = 0.5; // azimuth 45 / elev 30
 
-class Camera {
-  Camera({this.x = 0, this.y = 0, this.scale = 2.0, this.cx = 0, this.cy = 0});
+class IsoCam {
+  IsoCam({this.x = 0, this.y = 0, this.scale = 2.0, this.cx = 0, this.cy = 0});
   double x, y; // 相机对准的地面点
   double scale; // 世界单位 → 屏幕像素
   double cx, cy; // 视口中心（屏幕）
