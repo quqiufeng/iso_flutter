@@ -1,6 +1,7 @@
 // 兵线对推（左=我方防守 / 右=敌方进攻）：Flutter 渲染 + 纯 Lua Sim（battle.lua）。
 // 1/2/3 选兵种 · 点地面(左半)布兵 · R 重开 · 打掉对方基地即胜。
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -12,6 +13,7 @@ import 'package:iso_engine/iso_lathe.dart';
 import 'package:iso_engine/iso_render.dart';
 
 import 'game_runner.dart';
+import 'game_sprites.dart';
 import 'iso.dart';
 
 // Q版：按 hue 造一套彩色"线稿"调色板（浅底实体 + 深线）
@@ -54,6 +56,9 @@ class _GameState extends State<GameApp> with SingleTickerProviderStateMixin {
   void initState() {
     super.initState();
     GameRunner.i.ensure().then((_) {
+      if (mounted) setState(() {});
+    });
+    Sprites.load().then((_) {
       if (mounted) setState(() {});
     });
     _ticker = createTicker(_onTick)..start();
@@ -205,7 +210,7 @@ class _Painter extends CustomPainter {
         ..close();
     }
 
-    canvas.drawPath(quad(0, 0, cols.toDouble(), rows.toDouble()), Paint()..color = const Color(0xFFCFE0C6));
+
     canvas.drawPath(quad(cols / 2, 0, cols.toDouble(), rows.toDouble()), Paint()..color = const Color(0x1FD0873A));
     final line = Paint()
       ..color = const Color(0xFF9AA692)
@@ -237,20 +242,21 @@ class _Painter extends CustomPainter {
 
 
   void _base(Canvas c, Proj p, int rows, bool left, Color col, double hp) {
-    final pal = _pal(left ? 220 : 0);
     final cols = (st['cols'] as num).toDouble();
-    final x = left ? -0.55 : cols - 0.25;
-    final y = rows / 2 - 0.7;
-    drawSolid(c, slabOf([x, y, 0.8, 1.4, 0.25], 0, 2.2, p, 4), pal, tone: 'hi');
-    final top = cam.screen(x + 0.4, y + 0.7);
-    c.drawPath(
-      ui.Path()
-        ..moveTo(top[0] - 16, top[1] - 62)
-        ..lineTo(top[0] + 16, top[1] - 62)
-        ..lineTo(top[0], top[1] - 94)
-        ..close(),
-      Paint()..color = col,
-    );
+    final x = left ? -0.45 : cols - 0.55;
+    final top = cam.screen(x + 0.5, rows / 2);
+    final im = Sprites.img[left ? 'castle_blue' : 'castle_red'];
+    if (im != null) {
+      final h = 3.4 * cam.scale, w = h * im.width / im.height;
+      c.drawImageRect(
+        im,
+        Rect.fromLTWH(0, 0, im.width.toDouble(), im.height.toDouble()),
+        Rect.fromLTWH(top[0] - w / 2, top[1] - h, w, h),
+        Paint()..filterQuality = FilterQuality.medium..isAntiAlias = true,
+      );
+    } else {
+      drawSolid(c, slabOf([x, rows / 2 - 0.7, 0.8, 1.4, 0.25], 0, 2.2, p, 4), _pal(left ? 220 : 0), tone: 'hi');
+    }
     final bw = 66.0;
     final frac = (hp / 100).clamp(0.0, 1.0);
     c.drawRect(Rect.fromLTWH(top[0] - bw / 2, top[1] - 114, bw, 8), Paint()..color = const Color(0x22000000));
@@ -259,25 +265,53 @@ class _Painter extends CustomPainter {
 
   void _unit(Canvas canvas, Map<String, dynamic> u) {
     final x = (u['x'] as num).toDouble(), lane = (u['lane'] as num).toDouble();
-    final hue = (u['hue'] as num?)?.toDouble() ?? 200;
-    final pal = _pal(hue);
+    final kind = (u['type'] as String?) ?? 'npc';
+    final right = u['side'] == 'right';
     final s = cam.screen(x, lane);
-    final p0 = _p0;
-    canvas.save();
-    canvas.translate(s[0], s[1]);
-    // Q版：身体（圆柱）+ 大头（球）+ 眼
-    drawSolid(canvas, cylinder(0, 0, 0.27, 0, 0.7, p0, 12), pal, tone: 'hi');
-    drawSolid(canvas, sphereOf([0, 0, 1.05], 0.32, p0), pal, tone: 'hi');
-    canvas.drawCircle(const Offset(-0.16 * 34 * 1.2649, -0.26 * 34 * 1.2649), 2.2, Paint()..color = const Color(0xFF3A3A3A));
-    canvas.drawCircle(const Offset(0.16 * 34 * 1.2649, -0.26 * 34 * 1.2649), 2.2, Paint()..color = const Color(0xFF3A3A3A));
-    canvas.restore();
+    final im = Sprites.img[kind];
+    final t = (st['tick'] as num? ?? 0) / 60.0;
+    final moving = u['moving'] == true;
+    final cd = (u['cd'] as num?)?.toDouble() ?? 0;
+    final rate = (u['rate'] as num?)?.toDouble() ?? 1;
+    final attacked = cd > rate * 0.82;               // cd 刚重置 = 刚攻击
+    final phase = x * 1.7 + lane * 2.3;
+    final bob = moving ? math.sin(t * 9 + phase) * cam.scale * 0.07 : 0.0;
+    final lean = moving ? math.sin(t * 9 + phase) * 0.05 : (attacked ? (right ? 0.22 : -0.22) : 0.0);
+    final lunge = attacked ? (right ? -0.3 : 0.3) * cam.scale : 0.0;
+    if (im != null) {
+      final h = 1.35 * cam.scale;
+      final w = h * im.width / im.height;
+      canvas.save();
+      canvas.translate(s[0] + lunge, s[1] + bob);
+      canvas.rotate(lean);
+      if (right) canvas.scale(-1, 1); // 敌方朝左
+      canvas.drawImageRect(
+        im,
+        Rect.fromLTWH(0, 0, im.width.toDouble(), im.height.toDouble()),
+        Rect.fromLTWH(-w / 2, -h, w, h),
+        Paint()
+          ..filterQuality = FilterQuality.medium
+          ..isAntiAlias = true
+          ..colorFilter = attacked ? const ColorFilter.mode(Color(0x66FFFFFF), BlendMode.srcATop) : null,
+      );
+      canvas.restore();
+    } else {
+      // 后备：矢量 Q版
+      final pal = _pal((u['hue'] as num?)?.toDouble() ?? 200);
+      final p0 = _p0;
+      canvas.save();
+      canvas.translate(s[0], s[1]);
+      drawSolid(canvas, cylinder(0, 0, 0.27, 0, 0.7, p0, 12), pal, tone: 'hi');
+      drawSolid(canvas, sphereOf([0, 0, 1.05], 0.32, p0), pal, tone: 'hi');
+      canvas.restore();
+    }
     // HP 条
     final hp = (u['hp'] as num).toDouble(), max = (u['max'] as num).toDouble();
     final frac = (hp / max).clamp(0.0, 1.0);
     if (frac < 0.999) {
-      canvas.drawRect(Rect.fromLTWH(s[0] - 15, s[1] - 62, 30, 4), Paint()..color = const Color(0x33000000));
-      canvas.drawRect(Rect.fromLTWH(s[0] - 15, s[1] - 62, 30 * frac, 4),
-          Paint()..color = u['side'] == 'left' ? const Color(0xFF3E63DD) : const Color(0xFFE5484D));
+      canvas.drawRect(Rect.fromLTWH(s[0] - 16, s[1] - 2.5 * cam.scale, 32, 4), Paint()..color = const Color(0x33000000));
+      canvas.drawRect(Rect.fromLTWH(s[0] - 16, s[1] - 2.5 * cam.scale, 32 * frac, 4),
+          Paint()..color = right ? const Color(0xFFE5484D) : const Color(0xFF3E63DD));
     }
   }
 

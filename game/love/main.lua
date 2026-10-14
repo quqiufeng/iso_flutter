@@ -1,0 +1,161 @@
+-- LÖVE 集成：等距「兵线对推」。
+-- 复用：iso_engine/lib/lua/game/battle.lua（纯 Lua Sim）+ app/assets/sprites/*.png（img.sh 生成）
+-- 运行：love ~/iso_flutter/game/love
+local root = love.filesystem.getSource():gsub("/game/love$", "")
+
+-- Lua 模块（标准 require 走真实文件系统）
+package.path = root .. "/iso_engine/lib/lua/game/?.lua;" .. package.path
+
+local battle = require("battle")
+
+-- 从真实路径读图（LÖVE 11 无 mountFullPath → io 读字节 + newFileData）
+local function loadImage(path)
+  local f = io.open(path, "rb")
+  if not f then return nil end
+  local data = f:read("*a")
+  f:close()
+  local ok, img = pcall(love.graphics.newImage, love.filesystem.newFileData(data, "sprite.png"))
+  return ok and img or nil
+end
+
+-- 等距投影（地面 x,y → 屏幕相对）
+local CA, SA, SE, CE, U = 0.70710678, 0.70710678, 0.5, 0.86602540, 1.2649110640673518
+local function iso(x, y) return (x * CA - y * SA) * U, (x * SA + y * CA) * SE * U end
+
+local cam = { ox = 0, oy = 0, s = 40 }
+local function sx(x, y) local a, b = iso(x, y); return cam.ox + a * cam.s, cam.oy + b * cam.s end
+
+local SPR, game
+local dt = 1 / 60
+
+local function loadSprites()
+  SPR = {}
+  for _, n in ipairs({ "sword", "archer", "mage", "goblin", "shooter", "ogre", "castle_blue", "castle_red", "tile" }) do
+    local img = loadImage(root .. "/app/assets/sprites/" .. n .. ".png")
+    local ok = img ~= nil
+    if ok then img:setFilter("linear", "linear"); SPR[n] = img end
+  end
+end
+
+local function fit()
+  local w, h = love.graphics.getDimensions()
+  local cols, rows = game.cols, game.rows
+  local span = (cols + rows) * CA * U
+  cam.s = math.min(w * 0.92 / span, h * 0.92 / (span * 0.6))
+  cam.ox = w / 2 - ((cols - 1) / 2 * CA - (rows - 1) / 2 * SA) * U * cam.s
+  cam.oy = h / 2 - ((cols - 1) / 2 * SA + (rows - 1) / 2 * CA) * SE * U * cam.s + cam.s * 1.2
+end
+
+local sel = "sword"
+local TYPESEL = { ["1"] = "sword", ["2"] = "archer", ["3"] = "mage" }
+
+function love.load()
+  love.graphics.setBackgroundColor(0.94, 0.94, 0.92)
+  -- 中文字体（仓耳今楷）
+  local fp = os.getenv("HOME") .. "/.local/share/fonts/TsangerJinKai/TsangerJinKai02-W05.ttf"
+  local h = io.open(fp, "rb")
+  if h then
+    local bytes = h:read("*a"); h:close()
+    local ok, f = pcall(love.graphics.newFont, love.filesystem.newFileData(bytes, "cjk.ttf"), 16)
+    if ok then love.graphics.setFont(f) end
+  end
+  loadSprites()
+  game = battle.new()
+  fit()
+end
+
+function love.update(d)
+  if game.over then return end
+  game:step(d)
+end
+
+function love.keypressed(k)
+  if TYPESEL[k] then sel = TYPESEL[k] end
+  if k == "r" then game = battle.new(); fit() end
+end
+
+function love.mousepressed(mx, my, btn)
+  if btn ~= 1 or game.over then return end
+  -- 屏幕 → 地面（逆等距）
+  local a = (mx - cam.ox) / (cam.s * U)
+  local b = (my - cam.oy) / (cam.s * U * SE)
+  local gx = a * CA + b * SA
+  local gy = -a * SA + b * CA
+  if gx < game.cols / 2 then
+    game:deploy(math.max(0, math.min(game.rows - 1, math.floor(gy + 0.5))), sel)
+  end
+end
+
+local function drawUnit(u)
+  local x, y = sx(u.x, u.lane)
+  local img = SPR[u.type]
+  if not img then return end
+  local h = 1.35 * cam.s
+  local w = h * img:getWidth() / img:getHeight()
+  -- 走路/攻击：整体起伏 + 倾斜（先做"会动"，后续换骨骼/帧动画）
+  local t = love.timer.getTime()
+  local moving = u.moving
+  local bob = moving and math.sin(t * 9 + u.x * 1.7 + u.lane * 2.3) * cam.s * 0.07 or 0
+  local lean = moving and math.sin(t * 9 + u.x * 1.7) * 0.05 or 0
+  local attacked = u.cd and u.rate and u.cd > u.rate * 0.82
+  local lunge = attacked and (u.side == "right" and -0.3 or 0.3) * cam.s or 0
+  love.graphics.push()
+  love.graphics.translate(x + lunge, y + bob)
+  love.graphics.rotate(lean)
+  local fx = (u.side == "right") and -1 or 1
+  love.graphics.draw(img, -w / 2 * fx, -h, 0, fx * w / img:getWidth(), h / img:getHeight())
+  love.graphics.pop()
+  -- HP 条
+  if u.hp < u.max then
+    local bw = 32
+    love.graphics.setColor(0, 0, 0, 0.2); love.graphics.rectangle("fill", x - bw / 2, y - 2.5 * cam.s, bw, 4)
+    local col = u.side == "left" and { 0.24, 0.39, 0.87 } or { 0.9, 0.28, 0.3 }
+    love.graphics.setColor(col)
+    love.graphics.rectangle("fill", x - bw / 2, y - 2.5 * cam.s, bw * (u.hp / u.max), 4)
+    love.graphics.setColor(1, 1, 1)
+  end
+end
+
+function love.draw()
+  -- 地面网格
+  love.graphics.setColor(0.81, 0.88, 0.77)
+  for c = 0, game.cols - 1 do
+    for r = 0, game.rows - 1 do
+      local pts = {}
+      local q = { { c, r }, { c + 1, r }, { c + 1, r + 1 }, { c, r + 1 } }
+      for _, p in ipairs(q) do local X, Y = sx(p[1], p[2]); pts[#pts + 1] = X; pts[#pts + 1] = Y end
+      love.graphics.polygon("fill", pts)
+    end
+  end
+  love.graphics.setColor(0.6, 0.65, 0.57)
+  for c = 0, game.cols do local x1, y1 = sx(c, 0); local x2, y2 = sx(c, game.rows); love.graphics.line(x1, y1, x2, y2) end
+  for r = 0, game.rows do local x1, y1 = sx(0, r); local x2, y2 = sx(game.cols, r); love.graphics.line(x1, y1, x2, y2) end
+  love.graphics.setColor(1, 1, 1)
+
+  -- 城堡
+  for _, s in ipairs({ { true, "castle_blue" }, { false, "castle_red" } }) do
+    local img = SPR[s[2]]
+    if img then
+      local bx = s[1] and -0.45 or game.cols - 0.55
+      local X, Y = sx(bx + 0.5, game.rows / 2)
+      local h = 6.2 * cam.s
+      local w = h * img:getWidth() / img:getHeight()
+      love.graphics.draw(img, X - w / 2, Y - h, 0, w / img:getWidth(), h / img:getHeight())
+    end
+  end
+
+  -- 单位（按深度）
+  local us = {}
+  for _, u in ipairs(game.units) do us[#us + 1] = u end
+  table.sort(us, function(a, b) return (a.x + a.lane) < (b.x + b.lane) end)
+  for _, u in ipairs(us) do drawUnit(u) end
+
+  -- HUD
+  love.graphics.setColor(0.2, 0.2, 0.2)
+  love.graphics.print(string.format("资源 %.0f   波次 %d   我方 %d / 敌方 %d", game.resource, game.wave, game.bases.left.hp, game.bases.right.hp), 12, 10)
+  love.graphics.print("1 剑士  2 弓手  3 法师   ·   点左半场布兵   ·   R 重开", 12, 32)
+  if game.over then
+    love.graphics.print(game.winner == "left" and "我方胜利！" or "基地失守…", 12, 60)
+  end
+  love.graphics.setColor(1, 1, 1)
+end

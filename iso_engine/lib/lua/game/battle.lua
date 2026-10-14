@@ -111,6 +111,7 @@ function M:step(dt)
 
   -- 单位：有目标→停下攻击；否则推进
   for _, u in ipairs(self.units) do
+    u.moving = false
     if u.hp > 0 then
       local t = M.TYPES[u.type]
       u.cd = math.max(0, u.cd - dt)
@@ -131,6 +132,7 @@ function M:step(dt)
       else
         local dir = u.side == "left" and 1 or -1
         u.x = u.x + dir * t.speed * dt
+        u.moving = true
       end
     end
   end
@@ -161,7 +163,8 @@ function M:state()
   local units = {}
   for i, u in ipairs(self.units) do
     local tp = M.TYPES[u.type]
-    units[i] = { side = u.side, type = u.type, lane = u.lane, x = u.x, hp = u.hp, max = u.max, hue = tp.hue, range = tp.range }
+    units[i] = { side = u.side, type = u.type, lane = u.lane, x = u.x, hp = u.hp, max = u.max, hue = tp.hue, range = tp.range,
+      moving = u.moving == true, cd = u.cd, rate = tp.rate }
   end
   return {
     tick = self.tick, rows = self.rows, cols = self.cols, wave = self.wave,

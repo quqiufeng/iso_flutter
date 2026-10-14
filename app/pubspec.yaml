@@ -62,6 +62,7 @@ flutter:
 
   assets:
     - lib/lua/figures/
+    - assets/sprites/
 
   fonts:
     - family: TsangerJinKai02
