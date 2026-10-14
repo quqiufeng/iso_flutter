@@ -12,3 +12,6 @@ build/
 
 # 示例输出的中间帧
 **/*_frames/
+
+# 生成的素材/音频
+assets_gen/

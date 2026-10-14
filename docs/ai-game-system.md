@@ -126,3 +126,20 @@ AI 可以在**自己的 LuaJIT 里**直接 `require` 并运行它（`step/act/st
 - `docs/TESTING.md` —— 测试规范
 - `docs/references/*.md` —— 画图的 craft/kit/motion 规范
 - 仓库根 `README.md` —— 引擎架构/原理/双引擎
+
+---
+
+## 9. 素材生成链路（已实现工具）
+
+| 素材 | 工具 | 说明 |
+|---|---|---|
+| **矢量等距图**（场景/物件/角色/UI）| `bin/iso.sh`（+ `iso_engine`）| **代码生成**（Lua/Dart）；AI 可直接写 → 无需美术 |
+| **位图素材**（贴图/精灵/道具/图标）| `bin/img.sh` | 基于 `/opt/static_comfyui` 的 `backup.sh`（Z-Image Turbo）+ BiRefNet **抠图**；素材档尺寸预设 + 透明背景 + LoRA 风格 |
+| **语音/配音** | `bin/tts.sh` | sherpa-onnx + **Kokoro**（中/英多音色）→ wav/mp3；可指定 **CosyVoice3 克隆音色** |
+
+```bash
+bin/img.sh "a cartoon treasure chest, game prop" --kind prop --bg transparent   # → 透明 PNG
+bin/tts.sh "欢迎来到等距游戏世界" --out line01.wav                              # → 音频
+```
+
+三者都**脚本化、可被 AI 调用** ⇒ "AI 生成素材"闭环成立（矢量=引擎、位图=img.sh、语音=tts.sh）。
