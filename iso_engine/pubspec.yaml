@@ -9,3 +9,10 @@ environment:
 dependencies:
   # lua_bridge.dart 用 dart:ffi 加载 libluajit
   ffi: ^2.2.0
+  # iso_render.dart 用 dart:ui，且 Lua 引擎作为 assets 随包分发
+  flutter:
+    sdk: flutter
+
+flutter:
+  assets:
+    - lib/lua/

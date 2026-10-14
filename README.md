@@ -4,18 +4,24 @@
 **PNG / GIF / MP4**（发微信），并可与用户交互（拖拽开盖、实时特效）。**无浏览器、无 node、无 JS。**
 
 ```
-iso_flutter/
+iso_flutter/                       # 独立仓（自包含）
+  bin/iso.sh                       # 入口 CLI：render / anim → PNG / GIF / MP4
   iso_engine/        # 框架（Dart 包 name: iso_engine）
-    lib/iso_kit.dart  iso_lathe.dart  iso_tube.dart   # 引擎（Dart，移植自 isov-kit/lathe/tube.mjs）
+    lib/iso_kit.dart  iso_lathe.dart  iso_tube.dart   # 引擎（Dart，移植自 iso-kit/lathe/tube.mjs）
     lib/iso_render.dart                                # 渲染层：kit 线稿样式 → Canvas（Dart/Lua 图共用）
     lib/lua_bridge.dart                                # Dart ←FFI→ LuaJIT 桥
-    lib/lua/{iso_kit,lathe,tube}.lua                   # 引擎（Lua，与 Dart 等价）
+    lib/lua/{iso_kit,lathe,tube}.lua                   # 引擎（Lua，与 Dart 等价）—— 随包打成 assets
     tool/{kit_parity.dart,kit_parity.lua,lua_probe.dart}  # 对拍 / 桥探针
-  app/               # 应用（Flutter 工程 name: iso_app，依赖 ../iso_engine）
-    lib/main.dart                                      # 渲染窗口 + 导出 CLI + 图注册表 _figures
-    lib/lua/figures/tmall_genie.lua                    # 图（Lua 版天猫精灵）
+  app/               # 应用（Flutter name: iso_app，依赖 ../iso_engine）
+    lib/main.dart                                      # 窗口 + 导出 CLI + 图注册表 _figures
+    lib/lua/figures/tmall_genie.lua                    # 图（Lua 版天猫精灵）—— 打成 assets
     assets/fonts/  shaders/
+  docs/references/*.md               # 设计规范（craft/kit/motion…，来自 anatomy）
+  docs/LICENSE-anatomy              # 署名（MIT）
 ```
+
+**自包含**：Lua 引擎与图都随包打成 **assets**（运行时解包到临时目录 `require`/`dofile`），不依赖开发机路径；
+唯一外部依赖是系统 **`libluajit-5.1.so.2`**（`lua_bridge` 用 `dart:ffi` 加载）。
 
 ## 双引擎（Dart 与 Lua 并存，等价）
 - **引擎**：`lib/iso_*.dart` 与 `lib/lua/*.lua`；**图**可用 Dart 写（`main.dart` 的 `_figures`）或 Lua 写（`lib/lua/figures/*.lua`）。

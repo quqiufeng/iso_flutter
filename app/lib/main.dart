@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/scheduler.dart';
 
 import 'package:iso_engine/iso_kit.dart';
@@ -144,13 +145,25 @@ void tmallGenieDartFigure(ui.Canvas c, Palette pal, double lift, double time) {
 // ── Lua 图：跑 Lua(engine+figure) → 绘制指令 JSON → 画（渲染层复用）──
 final Lua _lua = Lua();
 
-String _luaRoot() => '${Platform.environment['HOME']}/iso_flutter';
+// Lua 引擎与图都随包打成 assets（iso_engine 的 lib/lua/ + 本包的 lib/lua/figures/）；
+// 运行时解包到临时目录供 require/dofile 使用 —— **自包含，不依赖开发机路径**。
+Directory? _luaTmp;
+
+Future<void> _ensureLua() async {
+  if (_luaTmp != null) return;
+  final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+  final dir = Directory.systemTemp.createTempSync('iso_lua_');
+  for (final key in manifest.listAssets()) {
+    if (!key.endsWith('.lua')) continue;
+    File('${dir.path}/${key.split('/').last}').writeAsStringSync(await rootBundle.loadString(key));
+  }
+  _luaTmp = dir;
+}
 
 List<dynamic> _runLuaFigure(String name, double lift, double time) {
-  final engine = '${_luaRoot()}/iso_engine/lib/lua'; // 引擎：iso_kit/lathe/tube.lua
-  final figures = '${_luaRoot()}/app/lib/lua/figures'; // 图
-  final code = 'package.path = "$engine/?.lua;$figures/?.lua;" .. package.path\n'
-      'local f = dofile("$figures/$name.lua")\n'
+  final dir = _luaTmp!.path;
+  final code = 'package.path = "$dir/?.lua;" .. package.path\n'
+      'local f = dofile("$dir/$name.lua")\n'
       'return f($lift, $time)';
   return jsonDecode(_lua.run(code)) as List<dynamic>;
 }
@@ -166,6 +179,7 @@ class _LuaSolid implements SolidPaths {
 }
 
 void tmallGenieLuaFigure(ui.Canvas c, Palette pal, double lift, double time) {
+  if (_luaTmp == null) return; // assets 尚未解包好
   for (final op in _runLuaFigure('tmall_genie', lift, time)) {
     final m = (op as Map).cast<String, dynamic>();
     switch (m['k'] as String) {
@@ -248,28 +262,9 @@ class _S extends State<App> with SingleTickerProviderStateMixin {
         }
       });
     })..start();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _dump());
-  }
-
-  Future<void> _dump() async {
-    for (final ss in [1.0, 2.0]) {
-      final rec = ui.PictureRecorder();
-      final cc = Canvas(rec)..scale(ss);
-      tmallGenieLuaFigure(cc, Palette.light, 0, 0);
-      final img = await rec.endRecording().toImage((W * ss).round(), (H * ss).round());
-      final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-      File('/tmp/opencode/render_${ss.toInt()}x.png').writeAsBytesSync(bytes!.buffer.asUint8List());
-    }
-    final rec2 = ui.PictureRecorder();
-    latheTestFigure(Canvas(rec2), Palette.light);
-    final img2 = await rec2.endRecording().toImage(560, 560);
-    final b2 = await img2.toByteData(format: ui.ImageByteFormat.png);
-    File('/tmp/opencode/lathe_native.png').writeAsBytesSync(b2!.buffer.asUint8List());
-    final rec3 = ui.PictureRecorder();
-    tubeTestFigure(Canvas(rec3), Palette.light);
-    final img3 = await rec3.endRecording().toImage(560, 560);
-    final b3 = await img3.toByteData(format: ui.ImageByteFormat.png);
-    File('/tmp/opencode/tube_native.png').writeAsBytesSync(b3!.buffer.asUint8List());
+    _ensureLua().then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -383,6 +378,7 @@ class _ExportState extends State<ExportApp> {
 
   Future<void> _run() async {
     final env = Platform.environment;
+    await _ensureLua();
     final fig = _figures[widget.name];
     if (fig == null) {
       stderr.writeln('unknown figure: ${widget.name} (have: ${_figures.keys.join(", ")})');

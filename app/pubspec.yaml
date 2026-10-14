@@ -63,6 +63,9 @@ flutter:
   shaders:
     - shaders/flame.frag
 
+  assets:
+    - lib/lua/figures/
+
   fonts:
     - family: TsangerJinKai02
       fonts:
