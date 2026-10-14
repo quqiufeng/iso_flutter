@@ -30,12 +30,26 @@ local dt = 1 / 60
 
 local function loadSprites()
   SPR = {}
-  for _, n in ipairs({ "sword", "archer", "mage", "goblin", "shooter", "ogre", "castle_blue", "castle_red", "tile" }) do
+  for _, n in ipairs({ "sword", "archer", "mage", "goblin", "shooter", "ogre", "castle_blue", "castle_red", "tile", "sword_sheet", "goblin_sheet" }) do
     local img = loadImage(root .. "/app/assets/sprites/" .. n .. ".png")
     local ok = img ~= nil
     if ok then img:setFilter("linear", "linear"); SPR[n] = img end
   end
+  -- 帧表 → 4 帧 Quad（B 逐帧）
+  QUAD = {}
+  for _, n in ipairs({ "sword_sheet", "goblin_sheet" }) do
+    local img = SPR[n]
+    if img then
+      local fw = img:getWidth() / 4
+      local base = n:gsub("_sheet$", "")
+      QUAD[base] = {}
+      for i = 0, 3 do
+        QUAD[base][i + 1] = love.graphics.newQuad(i * fw, 0, fw, img:getHeight(), img:getDimensions())
+      end
+    end
+  end
 end
+local QUAD = {}
 
 local function fit()
   local w, h = love.graphics.getDimensions()
@@ -89,9 +103,12 @@ end
 local function drawUnit(u)
   local x, y = sx(u.x, u.lane)
   local img = SPR[u.type]
+  local quads = QUAD[u.type]
+  if not img or (quads and QUAD[u.type]) then img = SPR[u.type .. "_sheet"] or img end
   if not img then return end
+  local fw = quads and img:getWidth() / 4 or img:getWidth()
   local h = 1.35 * cam.s
-  local w = h * img:getWidth() / img:getHeight()
+  local w = h * fw / img:getHeight()
   -- 走路/攻击：整体起伏 + 倾斜（先做"会动"，后续换骨骼/帧动画）
   local t = love.timer.getTime()
   local moving = u.moving
@@ -103,7 +120,16 @@ local function drawUnit(u)
   love.graphics.translate(x + lunge, y + bob)
   love.graphics.rotate(lean)
   local fx = (u.side == "right") and -1 or 1
-  love.graphics.draw(img, -w / 2 * fx, -h, 0, fx * w / img:getWidth(), h / img:getHeight())
+  local q = nil
+  if quads then
+    local frame = u.moving and (math.floor(t * 8 + u.x * 1.7 + u.lane) % 4 + 1) or 1
+    q = quads[frame]
+  end
+  if q then
+    love.graphics.draw(img, q, -w / 2 * fx, -h, 0, fx * w / fw, h / img:getHeight())
+  else
+    love.graphics.draw(img, -w / 2 * fx, -h, 0, fx * w / fw, h / img:getHeight())
+  end
   love.graphics.pop()
   -- HP 条
   if u.hp < u.max then
