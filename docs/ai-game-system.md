@@ -126,7 +126,7 @@ AI 可以在**自己的 LuaJIT 里**直接 `require` 并运行它（`step/act/st
 
 | 层 | 选型 | 说明 |
 |---|---|---|
-| **游戏逻辑（Sim）** | **纯 Lua** `iso_engine/lib/lua/game/battle.lua` | 确定性、headless、可回放；**`luajit` 直接跑**（agent 驱动/断言/复现），**同一份**也喂 LÖVE 渲染 |
+| **游戏逻辑（Sim）** | **纯 Lua** `iso_engine/lib/lua/game/`（`config/entity/behaviors/weapons/abilities/world/battle`） | 确定性、headless、可回放；**数据+行为+世界API+事件解耦**（加兵种只改 `config.lua`，不动主循环）；`luajit` 直接跑，**同一份**喂 LÖVE 渲染 |
 | **运行时 / 渲染** | **LÖVE（开源 Lua 2D 引擎）** `game/love/` | LuaJIT + SDL/OpenGL；`love.graphics` GPU 渲染。**集成进本项目**（当运行时用），不是"把我们的东西搬过去" |
 | **GUI 容器** | **Flutter**（`app/`） | **只做窗口/面板/工具**，**不再做游戏渲染**（按用户定） |
 | **角色关键帧** | **Google 图像（Nano Banana / Gemini）** | `bin/img_nano.sh`（经 **apimart.ai**）：以**同一张参考图**逐张出走路关键姿势 → **跨帧角色一致**（当前主力）|

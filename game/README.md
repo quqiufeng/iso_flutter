@@ -5,10 +5,27 @@
 ## 技术栈（当前）
 | 层 | 选型 | 位置 |
 |---|---|---|
-| **游戏逻辑（Sim）** | **纯 Lua**（确定性/headless） | `iso_engine/lib/lua/game/battle.lua` |
+| **游戏逻辑（Sim）** | **纯 Lua**（确定性/headless） | `iso_engine/lib/lua/game/`（见下「Sim 架构」） |
 | **运行时 / 渲染** | **LÖVE**（开源 Lua 2D 引擎，OpenGL） | `game/love/` |
 | **GUI 容器** | **Flutter**（只做窗口/工具，不做游戏渲染） | `app/` |
 | **角色素材** | **AI 关键帧**（Nano Banana）+ 抠图对齐 | `bin/img_nano.sh`、`game/love/assets/nb/` |
+
+## Sim 架构（数据 + 行为 + 世界 + 事件）
+逻辑与表现解耦：**实体只是数据；"怎么走/怎么打"是策略函数；一切交互经"世界"这扇门；结果以事件流出。**
+
+| 模块 | 职责 |
+|---|---|
+| `config.lua` | **纯数值**：兵种 / 波次 / 技能（加兵种=加一行，不动逻辑） |
+| `entity.lua` | 实体构造（pos/hp/team/stats/state，无逻辑） |
+| `behaviors.lua` | 行为(AI)：`rush/ranged/guard…`，统一签名 `(u, w, dt)` |
+| `weapons.lua` | 命中效果：`melee/arrow/splash/heavy…` |
+| `abilities.lua` | 技能：`ult/whirl` |
+| `world.lua` | **世界内核**：查询 / 推进 / 交战 / 结算 / **emit 事件**（不碰 `love.*`，可 headless） |
+| `battle.lua` | **组装门面**：`require("battle").new(...)`（对外 API 不变） |
+
+- 加兵种 → `config.units` 加一行；加行为 → `behaviors.lua` 一个函数；加武器 → `weapons.lua` 一个函数——**都不动主循环**。
+- Sim 只 `emit{type="hit|death|wave|base"}`；渲染/FX 去消费 → 换皮/换引擎不用动逻辑。
+- 确定性可测：`luajit` 直接跑两遍结果一致。
 
 ## 运行
 ```bash
