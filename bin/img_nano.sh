@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # img_nano.sh —— Nano Banana（Google Gemini 图像）生成 / 编辑。走 apimart.ai（异步任务）
 # @usage bin/img_nano.sh "<prompt>" [--model ID] [--ref IMG ...] [--size AR] [--res 1K|2K|4K] [--n N] [--out DIR] [--prefix NAME]
+# @rule  做角色/多帧一致性时【必须传 --ref 且始终同一张角色图】；不传参考图 → 每次形象漂移、跨帧对不上、白花钱不可用
 #   --model 默认 gemini-nano-banana-2.1（官方版，可多张；-ext 为按张计费单张版）
 #   --ref   参考图（可多张，做"同一角色/编辑"一致性）
 #   --size  宽高比，如 3:4 / 1:1 / 16:9（不传=跟随参考图/自动）

@@ -135,6 +135,10 @@ AI 可以在**自己的 LuaJIT 里**直接 `require` 并运行它（`step/act/st
 | **备选素材** | **CC0 paper-doll / 自建 Lua 骨骼** | `bin/char.sh`（分件组装，换武器/染色）、`iso_engine/lib/lua/rig.lua`（自建骨骼，零授权）|
 | **Agent 驱动** | `luajit -e` + 截图 | 无需 MCP/协议：跑 Lua 玩/测；`xdotool`+`import` 截图，agent 自己看 |
 
+> **⚠️ 统一原则：凡"动态效果"（角色动作 / 打斗特效）一律走「关键帧 + 动画模型」生成动画。**
+> 即：先用 **Google 图像（Nano Banana）出关键帧** → 再用 **SD1.5 + AnimateDiff（动画模型）**处理成动画帧/GIF。
+> **不**手绑骨、**不**逐帧手绘、**不**直接拿单张图当动画。
+
 **角色素材链路（当前用的方案）**
 ```
 参考图(角色形象)
@@ -149,7 +153,7 @@ AI 可以在**自己的 LuaJIT 里**直接 `require` 并运行它（`step/act/st
 LÖVE：角色按 walk 帧循环 → 在等距地图上沿兵线移动
 ```
 ```bash
-# 关键帧（同一参考图，一致性）
+# 关键帧 —— ⚠️ 必须 --ref 同一张角色图，否则形象漂移、不可用（白花钱）
 bin/img_nano.sh "同参考图的骑士…走路 KEYFRAME=CONTACT：左腿前…" --ref ref.png --size 3:4 --res 1K --out out
 # 图生 GIF（本地 AnimateDiff）
 sd-cli -M vid_gen -m sd15.safetensors --vae vae-ft-mse.safetensors \
@@ -157,6 +161,7 @@ sd-cli -M vid_gen -m sd15.safetensors --vae vae-ft-mse.safetensors \
 ```
 
 **关键教训**
+- **⚠️ 生成角色（关键帧/姿势）必须传参考图 `--ref`，且始终用同一张角色图**：Nano Banana 靠参考图锁定"这只角色"。**不传参考图 → 每次出的形象都不同**（发型/盔甲/配色/比例漂移）→ **白花钱、跨帧对不上、不能当动画用**。改动作只改 `prompt`，**参考图永远是同一张**。
 - **关键帧一致性靠"同一参考图"**：Nano Banana 给同一张角色参考图、逐张出姿势，实测**跨帧形象高度一致**（contact/passing 互换无误）→ 是当前做角色的主力。
 - **本地图生动画**：`/opt/sd` 的 `sd-cli` 支持 AnimateDiff（`-M vid_gen --motion-module`），能从关键帧/首帧出 GIF；但该分支**不接 ControlNet**（不能姿态驱动），单图只出**轻微运动** → **受控动作仍靠"逐张关键帧"**。
 - Wan 视频（gguf 5D）在本仓库跑不了：ggml `GGML_MAX_DIMS==4`。

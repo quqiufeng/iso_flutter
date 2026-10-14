@@ -229,19 +229,42 @@ local CHARMAP = { sword = "u1", archer = "u2", mage = "u3", goblin = "e1", shoot
 -- 兵种 → Nano Banana 关键帧角色（assets/nb/<name>_<anim>_<i>.png）
 local NBMAP = { sword = "knight", archer = "knight", mage = "knight", goblin = "knight", shooter = "knight", ogre = "knight" }
 
--- NB 关键帧动画：走/站，取对应帧表循环
+-- 飘伤害数字
+local POPS = {}
+
+-- NB 关键帧动画：攻击 / 走 / 站；含受击闪白 + 挥砍弧光
 local function drawNBUnit(u, x, y, name)
   local A = NBANIM[name]
   if not A then return false end
-  local list = (u.moving and A.walk) or A.idle or A.walk
-  if not list or #list == 0 then return false end
-  local fps = u.moving and 10 or 8
-  local fi = math.floor(love.timer.getTime() * fps + u.x * 1.3 + u.lane * 0.7) % #list + 1
-  local img = list[fi]
   local h = 1.9 * cam.s
+  local dir = (u.side == "right") and -1 or 1
+  local rate = (battle.TYPES[u.type] or {}).rate
+  local img
+  if u.attacking and A.attack and #A.attack > 0 and rate and rate > 0 then
+    -- 攻击：把「举剑→劈砍→收势」同步到攻击间隔（不循环，从头放）
+    local p  = 1 - (u.cd or 0) / rate
+    local fi = math.min(#A.attack, math.floor(p * #A.attack) + 1)
+    img = A.attack[fi]
+    -- 挥砍弧光（劈砍阶段）
+    if p > 0.15 and p < 0.72 then
+      love.graphics.setColor(1, 1, 1, 0.6 * (1 - math.abs(p - 0.42) / 0.3))
+      love.graphics.setLineWidth(3)
+      love.graphics.arc("line", "open", x + dir * 0.22 * h, y - h * 0.5, h * 0.34, -0.95 * dir, 0.75 * dir)
+      love.graphics.setColor(1, 1, 1); love.graphics.setLineWidth(1)
+    end
+  else
+    local list = (u.moving and A.walk) or A.idle or A.walk
+    if not list or #list == 0 then return false end
+    local fps = u.moving and 10 or 8
+    local fi = math.floor(love.timer.getTime() * fps + u.x * 1.3 + u.lane * 0.7) % #list + 1
+    img = list[fi]
+  end
+  if not img then return false end
   local w = h * img:getWidth() / img:getHeight()
-  local fx = (u.side == "right") and -1 or 1
-  love.graphics.draw(img, x - w / 2 * fx, y - h, 0, fx * w / img:getWidth(), h / img:getHeight())
+  local fl = u._flash
+  if fl and fl > 0 then love.graphics.setColor(1, 0.5, 0.5) end          -- 受击闪红
+  love.graphics.draw(img, x - w / 2 * dir, y - h, 0, dir * w / img:getWidth(), h / img:getHeight())
+  if fl and fl > 0 then love.graphics.setColor(1, 1, 1) end
   return true
 end
 
@@ -261,7 +284,7 @@ function love.load()
   for _, nm in ipairs({ "u1", "u2", "u3", "e1", "e2", "e3" }) do
     loadAnim(nm, "walk", 12); loadAnim(nm, "idle", 12); loadAnim(nm, "hit", 6); loadAnim(nm, "death", 12)
   end
-  loadNbAnim("knight", "walk", 4); loadNbAnim("knight", "idle", 4)
+  loadNbAnim("knight", "walk", 4); loadNbAnim("knight", "idle", 4); loadNbAnim("knight", "attack", 3)
   game = battle.new({ cols = 10, rows = 8 })
   fit()
 end
@@ -269,6 +292,21 @@ end
 function love.update(d)
   if game.over then return end
   game:step(d)
+  -- 伤害事件 → 受击闪红 + 飘伤害数字
+  for _, u in ipairs(game.units) do
+    local lh = u._lastHp
+    if lh and u.hp < lh - 0.01 then
+      u._flash = 0.16
+      local x, y = sx(u.x, u.lane)
+      POPS[#POPS + 1] = { x = x, y = y - 2.0 * cam.s, val = math.max(1, math.floor(lh - u.hp + 0.5)), t = 0 }
+    end
+    u._lastHp = u.hp
+    if u._flash then u._flash = u._flash - d; if u._flash <= 0 then u._flash = nil end end
+  end
+  for i = #POPS, 1, -1 do
+    POPS[i].t = POPS[i].t + d
+    if POPS[i].t > 0.9 then table.remove(POPS, i) end
+  end
 end
 
 function love.keypressed(k)
@@ -457,6 +495,14 @@ function love.draw()
   for _, u in ipairs(game.units) do us[#us + 1] = u end
   table.sort(us, function(a, b) return (a.x + a.lane) < (b.x + b.lane) end)
   for _, u in ipairs(us) do drawUnit(u) end
+
+  -- 飘伤害数字
+  for _, p in ipairs(POPS) do
+    local a = 1 - p.t / 0.9
+    love.graphics.setColor(1, 0.28, 0.22, a)
+    love.graphics.print("-" .. p.val, p.x - 8, p.y - p.t * 44)
+  end
+  love.graphics.setColor(1, 1, 1)
 
   -- HUD
   love.graphics.setColor(0.2, 0.2, 0.2)
