@@ -37,12 +37,16 @@ case "$CMD" in
   anim)
     [ -n "$FF" ] || { echo "需要 ffmpeg" >&2; exit 1; }
     FD="$OUTD/${FIG}_frames"; rm -rf "$FD"; mkdir -p "$FD"
-    env "${ENVS[@]}" ISO_BATCH=1 ISO_N="$FRAMES" ISO_OUT="$FD" timeout 600 "$BIN" >/dev/null 2>"$ERRF" || true
-    [ -f "$FD/f0000.png" ] || { echo "出动画失败（图名 $FIG 是否存在？）" >&2; sed -n '1,5p' "$ERRF" >&2; exit 1; }
+    # 原始 RGBA 帧（省掉 PNG 编码，快 ~3×）→ 直接喂 ffmpeg rawvideo
+    env "${ENVS[@]}" ISO_BATCH=1 ISO_RAW=1 ISO_N="$FRAMES" ISO_OUT="$FD" timeout 600 "$BIN" >/dev/null 2>"$ERRF" || true
+    [ -f "$FD/frames.rgba" ] || { echo "出动画失败（图名 $FIG 是否存在？）" >&2; sed -n '1,5p' "$ERRF" >&2; exit 1; }
+    read -r FW FH < "$FD/_size" || true
+    [ -n "${FW:-}" ] && [ -n "${FH:-}" ] || { echo "读不到帧尺寸" >&2; exit 1; }
+    IN=(-f rawvideo -pix_fmt rgba -s "${FW}x${FH}" -r 60 -i "$FD/frames.rgba")
     GIF="$OUTD/${FIG}.gif"; MP4="$OUTD/${FIG}.mp4"
-    ffmpeg -y -framerate 60 -i "$FD/f%04d.png" \
-      -vf "scale=iw:ih:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" "$GIF" >/dev/null 2>&1
-    ffmpeg -y -framerate 60 -i "$FD/f%04d.png" -c:v libx264 -pix_fmt yuv420p -movflags +faststart "$MP4" >/dev/null 2>&1
+    # GIF 缩一半（更小/更快分享），MP4 保持原尺寸
+    ffmpeg -y "${IN[@]}" -vf "scale=iw/2:ih/2:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" "$GIF" >/dev/null 2>&1
+    ffmpeg -y "${IN[@]}" -c:v libx264 -pix_fmt yuv420p -movflags +faststart "$MP4" >/dev/null 2>&1
     rm -rf "$FD"
     echo "$MP4"; echo "$GIF" ;;
   *) echo "未知命令: $CMD" >&2; exit 2 ;;

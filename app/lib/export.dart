@@ -50,27 +50,40 @@ class _ExportState extends State<ExportApp> {
     final pal = env['ISO_THEME'] == 'dark' ? Palette.dark : Palette.light;
     final outBase = env['ISO_OUT'] ?? '/tmp/iso_out/export.png';
 
-    Future<void> renderOne(int frame, String out) async {
+    Future<List<int>> renderBytes(int frame, bool raw) async {
       final t = n > 1 ? frame / n : 0.0;
       final rec = ui.PictureRecorder();
       final c = Canvas(rec)..scale(ss);
       c.drawRect(Rect.fromLTWH(0, 0, fig.w.toDouble(), fig.h.toDouble()), Paint()..color = pal.page);
       fig.paint(c, pal, _liftFor(t, env), t);
       final img = await rec.endRecording().toImage((fig.w * ss).round(), (fig.h * ss).round());
-      final bytes = await img.toByteData(format: ui.ImageByteFormat.png);
-      File(out).writeAsBytesSync(bytes!.buffer.asUint8List());
+      final bytes =
+          await img.toByteData(format: raw ? ui.ImageByteFormat.rawRgba : ui.ImageByteFormat.png);
       img.dispose();
+      return bytes!.buffer.asUint8List();
     }
 
     if (env['ISO_BATCH'] != null && n > 1) {
       Directory(outBase).createSync(recursive: true);
+      // B: 原始 RGBA 帧（省掉 PNG 编码）→ 写成单个 frames.rgba，直接喂 ffmpeg rawvideo
+      final raw = env['ISO_RAW'] != null;
+      final rawFile = File('$outBase/frames.rgba');
+      if (raw) {
+        rawFile.writeAsBytesSync(const []);
+        File('$outBase/_size').writeAsStringSync('${(fig.w * ss).round()} ${(fig.h * ss).round()}\n');
+      }
       for (var i = 0; i < n; i++) {
-        await renderOne(i, '$outBase/f${i.toString().padLeft(4, '0')}.png');
+        final bytes = await renderBytes(i, raw);
+        if (raw) {
+          rawFile.writeAsBytesSync(bytes, mode: FileMode.append);
+        } else {
+          File('$outBase/f${i.toString().padLeft(4, '0')}.png').writeAsBytesSync(bytes);
+        }
       }
       stdout.writeln('wrote $n frames -> $outBase');
       exit(0);
     }
-    await renderOne(int.tryParse(env['ISO_FRAME'] ?? '0') ?? 0, outBase);
+    File(outBase).writeAsBytesSync(await renderBytes(int.tryParse(env['ISO_FRAME'] ?? '0') ?? 0, false));
     stdout.writeln('wrote $outBase');
     exit(0);
   }
