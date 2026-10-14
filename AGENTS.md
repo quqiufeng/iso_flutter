@@ -1,5 +1,14 @@
 # AGENTS.md — 写图规范（写任何等距图 / 动画前**必读**）
 
+> ## ⚠️ 铁律：生成图 / 动画，必须遵守 `docs/references/` 的最佳实践
+> **任何一次生成图或动画前，必须先读、并严格遵守**：
+> - **动画** → `docs/references/motion.md`（运动/交互最佳实践）—— **不遵守不算完成**；
+> - 构图/明暗 → `docs/references/craft.md`；
+> - 引擎用法 → `docs/references/kit.md`；
+> - 自检 → `docs/references/verify.md`。
+>
+> 这些文档是"怎么画才好看 / 动画怎么做才对"的规范，**优先级高于个人直觉**。
+
 ## 1. 先读规范（`docs/references/`）
 
 | 文档 | 内容 | 必读 |
