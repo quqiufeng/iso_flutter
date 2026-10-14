@@ -16,34 +16,33 @@ class LuaFigures {
   static final LuaFigures i = LuaFigures._();
 
   final Lua _lua = Lua();
-  Directory? _tmp;
+  bool _ready = false;
   final Set<String> names = {}; // figures/ 下的 .lua 图名
   String? _error; // 只记一次
 
-  bool get ready => _tmp != null;
+  bool get ready => _ready;
 
-  /// 解包 assets 到临时目录并预编译所有图（只做一次）。
+  /// 把 assets 里的 Lua 源码经 `package.preload` 注册进 Lua（**免落盘**）并预编译所有图（只做一次）。
   Future<void> ensure() async {
-    if (_tmp != null) return;
+    if (_ready) return;
     final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
-    final dir = Directory.systemTemp.createTempSync('iso_lua_');
+    final sb = StringBuffer();
     for (final key in manifest.listAssets()) {
       if (!key.endsWith('.lua')) continue;
-      final name = key.split('/').last;
-      File('${dir.path}/$name').writeAsStringSync(await rootBundle.loadString(key));
-      if (key.contains('/figures/')) names.add(name.substring(0, name.length - 4));
+      final name = key.split('/').last.substring(0, key.split('/').last.length - 4);
+      final src = await rootBundle.loadString(key);
+      sb.write('package.preload["$name"] = function() return loadstring(${_luaQuote(src)})() end\n');
+      if (key.contains('/figures/')) names.add(name);
     }
     final list = names.map((n) => '"$n"').join(', ');
-    _lua.run('package.path = "${dir.path}/?.lua;" .. package.path\n'
-        '_FIGS = {}\n'
-        'for _, n in ipairs({$list}) do _FIGS[n] = dofile("${dir.path}/" .. n .. ".lua") end\n'
-        'return "ok"');
-    _tmp = dir;
+    sb.write('_FIGS = {}\nfor _, n in ipairs({$list}) do _FIGS[n] = require(n) end\nreturn "ok"');
+    _lua.run(sb.toString());
+    _ready = true;
   }
 
   /// 跑一张 Lua 图（已编译）→ 绘制指令列表。
   List<dynamic> run(String name, double lift, double time) {
-    if (_tmp == null) return const [];
+    if (!_ready) return const [];
     return jsonDecode(_lua.run('return _FIGS["$name"]($lift, $time)')) as List<dynamic>;
   }
 
@@ -52,6 +51,28 @@ class LuaFigures {
     _error = '$e';
     stderr.writeln('[iso] Lua 图出错：$e');
   }
+}
+
+/// 把任意文本转成 Lua 字符串字面量（按 UTF-8 字节做十进制转义，Lua 5.1/LuaJIT 可用）。
+String _luaQuote(String s) {
+  final b = StringBuffer('"');
+  for (final byte in utf8.encode(s)) {
+    if (byte == 0x5C) {
+      b.write('\\\\');
+    } else if (byte == 0x22) {
+      b.write('\\"');
+    } else if (byte == 0x0A) {
+      b.write('\\n');
+    } else if (byte == 0x0D) {
+      b.write('\\r');
+    } else if (byte < 32 || byte > 126) {
+      b.write('\\${byte.toString().padLeft(3, '0')}'); // \ddd（固定 3 位，0-255）
+    } else {
+      b.writeCharCode(byte);
+    }
+  }
+  b.write('"');
+  return b.toString();
 }
 
 class _LuaSolid implements SolidPaths {

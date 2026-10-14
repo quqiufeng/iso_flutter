@@ -166,7 +166,7 @@ bin/iso.sh anim   <图名> [--frames 120] [--motion] [--ss 2] [--out DIR]
 
 ## 自包含与桥
 
-- **Lua 随包打成 assets**：引擎 `iso_engine/lib/lua/` + 图 `app/lib/lua/figures/`；运行时**解包到临时目录**再 `require/dofile` —— 不依赖开发机路径。
+- **Lua 随包打成 assets**：引擎 `iso_engine/lib/lua/` + 图 `app/lib/lua/figures/`；运行时经 **`package.preload`** 注册（源码作字符串，**免落盘**）—— 不依赖开发机路径。
 - **唯一外部依赖**：系统 `libluajit-5.1.so.2`（`lua_bridge` 用 `dart:ffi` 加载）。
 - 字体 / 着色器随包（`app/assets/`、`app/shaders/`）。
 
