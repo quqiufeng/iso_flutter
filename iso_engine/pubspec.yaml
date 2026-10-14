@@ -1,0 +1,11 @@
+name: iso_engine
+description: 等距解释图引擎（Dart + Lua 两份等价实现，移植自 anatomy；渲染层 Canvas）
+version: 0.1.0
+publish_to: 'none'
+
+environment:
+  sdk: ^3.13.5
+
+dependencies:
+  # lua_bridge.dart 用 dart:ffi 加载 libluajit
+  ffi: ^2.2.0
