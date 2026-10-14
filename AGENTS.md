@@ -76,3 +76,23 @@ import -window "$WID" ~/iso_gen/shot.png || { eval "$(xdotool getwindowgeometry 
   `luajit iso_engine/lib/lua/game/run.lua --script "goto:14,14;pick" --json --replay`
 - 循环 = **写(码) → build → 跑 → 截图 → 看图 → 改**；人只给"想法/意见"。
 
+## 7. 开发提速：热重载 + 抓图/录像 + 动效自检
+
+| 工具 | 作用 |
+|---|---|
+| `bin/dev.sh [game/love\|game/tetris]` | **热重载**：改 `.lua` 存盘即自动重开窗口 |
+| `CAPTURE_DIR=… CAPTURE_FRAMES=N love <game>` | **埋钩子连拍**：动画/技能/消行**触发时**自动抓 N 帧到该目录（`F2` 手动） |
+| `AUTO=ult\|whirl`（对推）/ `AUTO=1`（方块） | **无人值守**：自动布兵/放招，或让 AI 自动玩，配合抓图/录像 |
+| `ffmpeg -f x11grab -video_size WxH -i :0.0+X,Y …` | **录屏**（比逐帧截图顺，动效完整） |
+| `bin/motion.sh <frames-dir> [glob]` | **动效自检**：相邻帧 RMSE 运动曲线（峰值帧 / 近似静止 / 强度）→ 判断"动"对不对 |
+
+```bash
+# 改代码即时看：热重载
+bin/dev.sh game/tetris
+# 自动抓「大招」全过程 + 自检 + 出图
+AUTO=ult CAPTURE_DIR=$HOME/iso_gen/ult CAPTURE_FRAMES=55 love game/love
+bin/motion.sh ~/iso_gen/ult 'ult_*.png'
+```
+
+> 工作文件统一放 `~/iso_gen/`（**禁 `/tmp`**）。
+
