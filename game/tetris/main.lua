@@ -1,13 +1,14 @@
--- 水晶方块 Tetris —— LÖVE 运行时
--- 方块素材：Nano Banana 出的 q 版玻璃水晶块（同一参考图 → 一致），见 ../README
+-- 水晶方块 Tetris —— LÖVE 运行时（渲染/输入/特效）
+-- 逻辑在 sim.lua（纯 Lua 仿真：确定性/headless/可回放/带落子记忆）；本文件只消费 state()/events。
 -- 运行：love ~/iso_flutter/game/tetris
-local root = love.filesystem.getSource()
+local sim = require("sim")
+
+local COLS, ROWS = sim.COLS, sim.ROWS
+local TYPES, SHAPES = sim.TYPES, sim.SHAPES
 
 local function loadImage(path, mip)
-  local f = io.open(path, "rb")
-  if not f then return nil end
-  local d = f:read("*a"); f:close()
-  local ok, img = pcall(love.graphics.newImage, love.filesystem.newFileData(d, "b.png"), mip and { mipmaps = true } or nil)
+  if not love.filesystem.getInfo(path) then return nil end
+  local ok, img = pcall(love.graphics.newImage, path, mip and { mipmaps = true } or nil)
   return ok and img or nil
 end
 
@@ -33,145 +34,250 @@ local function capFrame()
   end)
 end
 
-local COLS, ROWS = 10, 20
-local TYPES = { "i", "o", "t", "s", "z", "j", "l" }
-local SHAPES = {
-  i = { { 0, 0, 0, 0 }, { 1, 1, 1, 1 }, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } },
-  o = { { 1, 1 }, { 1, 1 } },
-  t = { { 0, 1, 0 }, { 1, 1, 1 }, { 0, 0, 0 } },
-  s = { { 0, 1, 1 }, { 1, 1, 0 }, { 0, 0, 0 } },
-  z = { { 1, 1, 0 }, { 0, 1, 1 }, { 0, 0, 0 } },
-  j = { { 1, 0, 0 }, { 1, 1, 1 }, { 0, 0, 0 } },
-  l = { { 0, 0, 1 }, { 1, 1, 1 }, { 0, 0, 0 } },
+-- 中国传统色（见 /opt/my-agent/operator/CHINESE-COLORS.md）
+local function hex(s)
+  return { tonumber(s:sub(2, 3), 16) / 255, tonumber(s:sub(4, 5), 16) / 255, tonumber(s:sub(6, 7), 16) / 255 }
+end
+local THEME = {
+  bg     = hex("#EAF3DC"),      -- 霜地（嫩绿宣纸）
+  board  = hex("#F5FAEC"),      -- 嫩菊绿（棋盘底）
+  grid   = hex("#D3E1BB"),      -- 姚黄（浅网格）
+  border = hex("#7BC092"),      -- 梅子青（浅绿边框）
+  ink    = hex("#1D1B1C"),      -- 墨色（主文字）
+  dim    = hex("#5B6B4F"),      -- 次文字
+  btn    = hex("#F5FAEC"),
+  btnOn  = hex("#D6E6BE"),
 }
-local COL = { i = { .3, .85, .95 }, o = { .98, .82, .25 }, t = { .72, .4, .95 }, s = { .35, .9, .45 },
-              z = { .95, .3, .35 }, j = { .35, .6, .98 }, l = { .98, .6, .2 } }
+local COL = {                   -- 方块：中国传统色（柔和养眼）
+  i = hex("#57AECB"), o = hex("#EFC53B"), t = hex("#9B8AE8"), s = hex("#4CAF6E"),
+  z = hex("#CE5A57"), j = hex("#3E77AE"), l = hex("#CE8246"),
+}
 
 local BLK = {}
 local font
 
-local board, cur, nextType, bag
-local score, lines, level, over, paused
-local fallT, fallInterval
+-- 当前局（纯 Lua 仿真）
+local game
+
+-- juice 状态
 local lockFx, flashes, parts, shake, dropTrail, lineFlash
 
-local function rnd() return love.math.random(1, #bag) end
-local function refillBag()
-  bag = {}
-  for _, t in ipairs(TYPES) do bag[#bag + 1] = t end
-  for i = #bag, 2, -1 do local j = love.math.random(i); bag[i], bag[j] = bag[j], bag[i] end
-end
-local function nextFromBag()
-  if #bag == 0 then refillBag() end
-  return table.remove(bag)
-end
-
-local function emptyBoard()
-  board = {}
-  for r = 1, ROWS do board[r] = {} end
-end
-
-local function collide(m, ox, oy)
-  for r = 1, #m do for c = 1, #m[r] do
-    if m[r][c] == 1 then
-      local x, y = ox + c - 1, oy + r - 1
-      if x < 1 or x > COLS or y > ROWS then return true end
-      if y >= 1 and board[y][x] then return true end
-    end
-  end end
-  return false
-end
-
-local function spawn()
-  local t = nextType or nextFromBag()
-  nextType = nextFromBag()
-  local src = SHAPES[t]
-  local m = {}
-  for i = 1, #src do m[i] = {}; for j = 1, #src[i] do m[i][j] = src[i][j] end end
-  cur = { t = t, m = m, x = math.floor((COLS - #m[1]) / 2) + 1, y = 1 }
-  if collide(cur.m, cur.x, cur.y) then over = true end
-end
-
-local function rotCW(m)
-  local n = #m; local o = {}
-  for r = 1, n do o[r] = {}; for c = 1, n do o[r][c] = m[n - c + 1][r] end end
-  return o
-end
-
-local function tryRotate()
-  local m = rotCW(cur.m)
-  for _, dx in ipairs({ 0, -1, 1, -2, 2 }) do
-    if not collide(m, cur.x + dx, cur.y) then cur.m = m; cur.x = cur.x + dx; return end
-  end
-end
-
-local function lockFlashCell(x, y) lockFx[y][x] = 0.18 end
-
-local function lock()
-  for r = 1, #cur.m do for c = 1, #cur.m[r] do
-    if cur.m[r][c] == 1 then
-      local x, y = cur.x + c - 1, cur.y + r - 1
-      if y >= 1 then board[y][x] = cur.t; lockFlashCell(x, y) end
-    end
-  end end
-  -- 消行
-  local cleared = {}
-  for y = 1, ROWS do
-    local full = true
-    for x = 1, COLS do if not board[y][x] then full = false; break end end
-    if full then cleared[#cleared + 1] = y end
-  end
-  if #cleared > 0 then
-    capBegin("line")                               -- 消行 → 自动连拍
-    -- 闪光 + 碎晶粒子
-    for _, y in ipairs(cleared) do
-      flashes[#flashes + 1] = { y = y, t = 0, life = 0.35 }
-      for x = 1, COLS do
-        for k = 1, 2 do
-          parts[#parts + 1] = {
-            t = board[y][x] or "i", gx = x + 0.5, gy = y + 0.5,
-            vx = (love.math.random() - 0.5) * 8, vy = -love.math.random() * 7 - 2,
-            rot = love.math.random() * 6.28, vr = (love.math.random() - 0.5) * 12,
-            s = 0.55 + love.math.random() * 0.4, life = 0.7 + love.math.random() * 0.35, age = 0,
-          }
-        end
-      end
-    end
-    lineFlash = 0.4
-    -- 下移
-    table.sort(cleared)
-    for i = #cleared, 1, -1 do
-      table.remove(board, cleared[i]); table.insert(board, 1, {})
-    end
-    local n = #cleared
-    score = score + ({ 0, 100, 300, 500, 800 })[n] * level
-    lines = lines + n
-    level = 1 + math.floor(lines / 10)
-    fallInterval = math.max(0.06, 0.8 - (level - 1) * 0.07)
-    shake = math.min(10, 4 + n * 2)
-  end
-  spawn()
-end
-
-local function reset()
-  emptyBoard()
+local function resetJuice()
   lockFx = {}
   for r = 1, ROWS do lockFx[r] = {} end
-  bag = {}; refillBag(); nextType = nextFromBag()
-  score, lines, level, over, paused = 0, 0, 1, false, false
-  fallT, fallInterval = 0, 0.8
   flashes, parts, dropTrail = {}, {}, {}
   shake, lineFlash = 0, 0
-  spawn()
 end
 
-local function ghostY()
-  local y = cur.y
-  while not collide(cur.m, cur.x, y + 1) do y = y + 1 end
-  return y
+local function newGame(seed)
+  game = sim.new({ seed = seed or os.time() })
+  resetJuice()
 end
 
--- 简单 AI：枚举 旋转×落点，按「聚合高度/空洞/凹凸/消行」启发式选最优
+-- ===== 文件桥（agent 接口驱动：读状态 / 写指令，无需截图）=====
+-- 游戏每帧把 state 写成 JSON，agent 读它（含当前块与后续方块序列 queue）；
+-- agent 写命令文件，游戏读取并执行。默认目录为 app 私有外部目录（adb 可读写）。
+local BRIDGE = os.getenv("BRIDGE_DIR")
+if not BRIDGE and love.system and love.system.getOS() == "Android" then
+  BRIDGE = "/sdcard/Android/data/org.love2d.android/files"
+end
+local lastCmd, bridgeFrame = nil, 0
+
+local function bridgeWrite()
+  if not BRIDGE then return end
+  local s = game:state()
+  local rows = {}
+  for r = 1, ROWS do
+    local row = {}
+    for c = 1, COLS do row[c] = s.board[r][c] or "." end
+    rows[r] = table.concat(row)
+  end
+  local obj = {
+    tick = s.tick, over = s.over, paused = s.paused,
+    score = s.score, lines = s.lines, level = s.level, locks = s.locks,
+    cur = s.cur and { t = s.cur.t, x = s.cur.x, y = s.cur.y, m = s.cur.m } or false,
+    next = s.next, queue = s.queue, board = rows,
+  }
+  local f = io.open(BRIDGE .. "/tetris_state.json", "wb")
+  if f then f:write(sim.encode(obj)); f:close() end
+end
+
+local function bridgeRead()
+  if not BRIDGE then return end
+  local f = io.open(BRIDGE .. "/tetris_cmd.txt", "rb")
+  if not f then return end
+  local data = f:read("*a"); f:close()
+  if data == lastCmd then return end
+  lastCmd = data
+  for line in data:gmatch("[^\n]+") do
+    line = line:gsub("^%s+", ""):gsub("%s+$", "")
+    if line == "restart" then newGame()
+    elseif line == "pause" then game:act("pause")
+    elseif line == "hold" then game.fallInterval = 1e9          -- 冻结重力（agent 完全掌控）
+    elseif line == "release" then game.fallInterval = math.max(0.06, 0.8 - (game.level - 1) * 0.07)
+    elseif line:match("^act:") then game:act(line:sub(5)) end
+  end
+end
+
+-- ===== 触屏 / 鼠标 控制（手机无键盘）=====
+local FONT_PATH = "assets/fonts/TsangerJinKai02-subset.ttf"
+local function newFont(sz)
+  if love.filesystem.getInfo(FONT_PATH) then
+    local ok, f = pcall(love.graphics.newFont, FONT_PATH, sz)
+    if ok then return f end
+  end
+  local ok, f = pcall(love.graphics.newFont, sz)
+  return ok and f or nil
+end
+
+local BTN = {}                              -- 每帧可点的按钮矩形
+local held = {}                             -- 按住的按钮 → { t, nextAt }（连发）
+local REPEAT_DELAY, REPEAT_GAP = 0.20, 0.06
+
+local function uiScale()
+  local h = love.graphics.getHeight()
+  return math.max(0.85, math.min(h / 720, 2.4))
+end
+local function ctrlH() return 58 * uiScale() end
+
+local function moveX(dx)
+  if not game.over and not game.paused then game:act(dx < 0 and "left" or "right") end
+end
+
+local function buildButtons()
+  BTN = {}
+  local w, h = love.graphics.getDimensions()
+  local s = uiScale()
+  local labels = { { "left", "←" }, { "right", "→" }, { "rotate", "" }, { "hard", "" } }
+  local n = #labels
+  local gap = 8 * s
+  local bh = ctrlH() - 20 * s
+  local bw = math.min(bh * 1.3, 96 * s, (w - (n + 1) * gap) / n)
+  local total = n * bw + (n - 1) * gap
+  local x0 = (w - total) / 2
+  local y = h - ctrlH() + (ctrlH() - bh) / 2
+  for i, lb in ipairs(labels) do
+    BTN[#BTN + 1] = { id = lb[1], x = x0 + (i - 1) * (bw + gap), y = y, w = bw, h = bh,
+                      label = lb[2], font = newFont(math.floor(30 * s)) }
+  end
+  -- 暂停 / 重开（矮横条，别太高）
+  local pw, ph = 62 * s, 32 * s
+  BTN[#BTN + 1] = { id = "pause",   x = w - pw * 2 - 20 * s, y = 8 * s, w = pw, h = ph, label = "暂停", font = newFont(math.floor(16 * s)) }
+  BTN[#BTN + 1] = { id = "restart", x = w - pw - 12 * s,      y = 8 * s, w = pw, h = ph, label = "重开", font = newFont(math.floor(16 * s)) }
+end
+
+local function buttonAt(x, y)
+  for _, b in ipairs(BTN) do
+    if x >= b.x and x <= b.x + b.w and y >= b.y and y <= b.y + b.h then return b end
+  end
+end
+
+local function pressBtn(id)
+  if id == "restart" then newGame()
+  elseif id == "pause" then game:act("pause")
+  elseif not game.over and not game.paused then
+    if id == "left" then game:act("left")
+    elseif id == "right" then game:act("right")
+    elseif id == "rotate" then game:act("rotate")
+    elseif id == "hard" then game:act("hard") end
+  end
+end
+
+local function stepHeld(d)
+  for id, st in pairs(held) do
+    if id == "left" or id == "right" then
+      st.t = st.t + d
+      if st.t >= st.nextAt then
+        moveX(id == "left" and -1 or 1)
+        st.nextAt = st.nextAt + REPEAT_GAP
+      end
+    end
+  end
+end
+
+local function drawButtons()
+  local s = uiScale()
+  for _, b in ipairs(BTN) do
+    local on = held[b.id] ~= nil
+    local bc = on and THEME.btnOn or THEME.btn
+    love.graphics.setColor(bc[1], bc[2], bc[3], on and 0.95 or 0.9)
+    love.graphics.rectangle("fill", b.x, b.y, b.w, b.h, 10 * s, 10 * s)
+    love.graphics.setColor(THEME.border[1], THEME.border[2], THEME.border[3], 0.9)
+    love.graphics.rectangle("line", b.x, b.y, b.w, b.h, 10 * s, 10 * s)
+    local cx, cy = b.x + b.w / 2, b.y + b.h / 2
+    if b.id == "rotate" then
+      local r = b.h * 0.26
+      local lw = math.max(2, 4 * s)
+      love.graphics.setColor(THEME.ink)
+      love.graphics.setLineWidth(lw)
+      local a0, a1 = -2.3, 1.7
+      love.graphics.arc("line", "open", cx, cy, r, a0, a1)
+      love.graphics.setLineWidth(1)
+      local ah = r * 0.55
+      local tx, ty = -math.sin(a1), math.cos(a1)
+      local nx, ny = math.cos(a1), math.sin(a1)
+      local px, py = cx + r * math.cos(a1), cy + r * math.sin(a1)
+      love.graphics.polygon("fill",
+        px + tx * ah, py + ty * ah,
+        px + nx * ah * 0.85, py + ny * ah * 0.85,
+        px - nx * ah * 0.85, py - ny * ah * 0.85)
+    elseif b.id == "hard" then
+      local lw = math.max(2, 4 * s)
+      love.graphics.setColor(THEME.ink)
+      love.graphics.setLineWidth(lw)
+      local w, hh = b.w * 0.22, b.h * 0.20
+      for k = 0, 1 do
+        local yy = cy - hh * 1.3 + k * hh * 1.5
+        love.graphics.line(cx - w, yy, cx, yy + hh, cx + w, yy)
+      end
+      love.graphics.setLineWidth(1)
+    elseif b.font then
+      love.graphics.setFont(b.font)
+      love.graphics.setColor(THEME.ink)
+      local fh = b.font:getHeight()
+      love.graphics.printf(b.label, b.x, b.y + (b.h - fh) / 2, b.w, "center")
+    end
+  end
+  love.graphics.setColor(1, 1, 1)
+end
+
+function love.resize() buildButtons() end
+
+function love.load()
+  love.graphics.setBackgroundColor(THEME.bg)
+  font = newFont(math.floor(18 * uiScale()))
+  if font then love.graphics.setFont(font) end
+  for _, t in ipairs(TYPES) do
+    local img = loadImage("assets/blocks/" .. t .. ".png", true)
+    if img then img:setFilter("linear", "linear"); img:setMipmapFilter("linear") end
+    BLK[t] = img
+  end
+  newGame()
+  buildButtons()
+end
+
+function love.keypressed(k)
+  if k == "f2" then capBegin("manual"); return end
+  if k == "r" then newGame(); return end
+  if k == "p" then game:act("pause"); return end
+  if game.over or game.paused then return end
+  if k == "left" then game:act("left")
+  elseif k == "right" then game:act("right")
+  elseif k == "down" then game:act("soft")
+  elseif k == "up" or k == "x" then game:act("rotate")
+  elseif k == "space" then game:act("hard")
+  end
+end
+
+-- 触摸（Android 会同时产生鼠标事件）/ 鼠标点击控制条
+function love.mousepressed(mx, my, btn)
+  if btn ~= 1 then return end
+  local b = buttonAt(mx, my)
+  if b then held[b.id] = { t = 0, nextAt = REPEAT_DELAY }; pressBtn(b.id) end
+end
+function love.mousereleased() held = {} end
+
+-- ===== 简单 AI（AUTO 无人值守用）：枚举 旋转×落点，按启发式选最优 =====
 local function evalOcc(occ)
   local h = {}
   for c = 1, COLS do local v = 0; for r = 1, ROWS do if occ[r][c] then v = ROWS - r + 1; break end end h[c] = v end
@@ -188,14 +294,15 @@ end
 
 local function aiBest()
   local best, bm, bx = -1e9, nil, nil
+  local cur = game.cur
   local m = cur.m
   for _ = 0, 3 do
     for x = 1, COLS do
-      if not collide(m, x, cur.y) then
+      if not game:collide(m, x, cur.y) then
         local y = cur.y
-        while not collide(m, x, y + 1) do y = y + 1 end
+        while not game:collide(m, x, y + 1) do y = y + 1 end
         local occ = {}
-        for r = 1, ROWS do occ[r] = {}; for c = 1, COLS do occ[r][c] = board[r][c] end end
+        for r = 1, ROWS do occ[r] = {}; for c = 1, COLS do occ[r][c] = game.board[r][c] end end
         local okp = true
         for r = 1, #m do for c = 1, #m[r] do
           if m[r][c] == 1 then
@@ -203,59 +310,50 @@ local function aiBest()
             if yy < 1 or yy > ROWS or xx < 1 or xx > COLS then okp = false else occ[yy][xx] = true end
           end
         end end
-        if okp then local s = evalOcc(occ); if s > best then best, bm, bx = s, m, x end end
+        if okp then local sc = evalOcc(occ); if sc > best then best, bm, bx = sc, m, x end end
       end
     end
-    m = rotCW(m)
+    m = sim.rotCW(m)
   end
   return bm, bx
 end
 
-local function hardDrop()
-  local gy = ghostY()
-  local d = gy - cur.y
-  for i = 1, math.min(d, 8) do dropTrail[#dropTrail + 1] = { x = cur.x, y = cur.y + i, m = cur.m, t = cur.t, life = 0.25, age = 0 } end
-  cur.y = gy
-  shake = math.max(shake, math.min(8, d * 0.8))
-  lock()
-end
-
-function love.load()
-  love.graphics.setBackgroundColor(0.06, 0.07, 0.12)
-  local ok, f = pcall(love.graphics.newFont, 18)
-  if ok then font = f end
-  -- 中文字体
-  local fp = os.getenv("HOME") .. "/.local/share/fonts/TsangerJinKai/TsangerJinKai02-W05.ttf"
-  local h = io.open(fp, "rb")
-  if h then
-    local bytes = h:read("*a"); h:close()
-    local ok2, cf = pcall(love.graphics.newFont, love.filesystem.newFileData(bytes, "cjk.ttf"), 18)
-    if ok2 then font = cf end
+-- 消费 Sim 事件流 → 特效/音效/连拍
+local function consumeEvents()
+  for _, ev in ipairs(game.events) do
+    if ev.type == "lock" then
+      for _, cell in ipairs(ev.rec.cells) do
+        if lockFx[cell.y] then lockFx[cell.y][cell.x] = 0.18 end
+      end
+    elseif ev.type == "harddrop" then
+      for i = 1, math.min(ev.dist, 8) do
+        dropTrail[#dropTrail + 1] = { x = ev.x, y = ev.fromY + i, m = ev.m, t = ev.t, life = 0.25, age = 0 }
+      end
+      shake = math.max(shake, math.min(8, ev.dist * 0.8))
+    elseif ev.type == "clear" then
+      capBegin("line")                                  -- 消行 → 自动连拍
+      for _, y in ipairs(ev.rows) do flashes[#flashes + 1] = { y = y, t = 0, life = 0.35 } end
+      for i, y in ipairs(ev.rows) do
+        local row = ev.types[i] or {}
+        for x = 1, COLS do for k = 1, 2 do
+          parts[#parts + 1] = {
+            t = row[x] or "i", gx = x + 0.5, gy = y + 0.5,
+            vx = (love.math.random() - 0.5) * 8, vy = -love.math.random() * 7 - 2,
+            rot = love.math.random() * 6.28, vr = (love.math.random() - 0.5) * 12,
+            s = 0.55 + love.math.random() * 0.4, life = 0.7 + love.math.random() * 0.35, age = 0,
+          }
+        end end
+      end
+      lineFlash = 0.4
+      shake = math.max(shake, math.min(10, 4 + ev.lines * 2))
+    end
   end
-  if font then love.graphics.setFont(font) end
-  for _, t in ipairs(TYPES) do
-    local img = loadImage(root .. "/assets/blocks/" .. t .. ".png", true)
-    if img then img:setFilter("linear", "linear"); img:setMipmapFilter("linear") end
-    BLK[t] = img
-  end
-  reset()
-end
-
-function love.keypressed(k)
-  if k == "f2" then capBegin("manual"); return end
-  if k == "r" then reset(); return end
-  if over then return end
-  if k == "p" then paused = not paused; return end
-  if paused then return end
-  if k == "left" then if not collide(cur.m, cur.x - 1, cur.y) then cur.x = cur.x - 1 end
-  elseif k == "right" then if not collide(cur.m, cur.x + 1, cur.y) then cur.x = cur.x + 1 end
-  elseif k == "down" then if not collide(cur.m, cur.x, cur.y + 1) then cur.y = cur.y + 1; score = score + 1 end
-  elseif k == "up" or k == "x" then tryRotate()
-  elseif k == "space" then hardDrop()
-  end
+  game:clearEvents()
 end
 
 function love.update(d)
+  bridgeRead()
+  stepHeld(d)
   for i = #parts, 1, -1 do
     local p = parts[i]; p.age = p.age + d
     p.gx = p.gx + p.vx * d; p.vy = p.vy + 40 * d; p.gy = p.gy + p.vy * d; p.rot = p.rot + p.vr * d
@@ -266,62 +364,72 @@ function love.update(d)
   for r = 1, ROWS do for x = 1, COLS do if lockFx[r][x] then lockFx[r][x] = lockFx[r][x] - d; if lockFx[r][x] <= 0 then lockFx[r][x] = nil end end end end
   shake = math.max(0, shake - d * 40)
   lineFlash = math.max(0, lineFlash - d)
-  if over or paused then return end
+  if game.over or game.paused then
+    bridgeFrame = bridgeFrame + 1
+    if bridgeFrame % 6 == 0 then bridgeWrite() end
+    return
+  end
   if AUTO then                                    -- AI 自动玩（无人值守抓消行）
     aiT = aiT - d
     if aiT <= 0 then
       local bm, bx = aiBest()
-      if bm and bx then cur.m, cur.x = bm, bx; hardDrop() end
+      if bm and bx then game.cur.m, game.cur.x = bm, bx; game:act("hard") end
       aiT = 0.2
     end
   end
-  fallT = fallT + d
-  if fallT >= fallInterval then
-    fallT = fallT - fallInterval
-    if not collide(cur.m, cur.x, cur.y + 1) then cur.y = cur.y + 1 else lock() end
-  end
+  game:step(d)
+  consumeEvents()
+  bridgeFrame = bridgeFrame + 1
+  if bridgeFrame % 2 == 0 then bridgeWrite() end
 end
 
 -- 布局
 local function layout()
   local w, h = love.graphics.getDimensions()
-  local panel = 170
-  local cell = math.min((h - 60) / ROWS, (w - panel - 60) / COLS)
+  local s = uiScale()
+  local ch = ctrlH()
+  local pad = 6 * s
+  local portrait = h > w * 1.06
+  local topH = portrait and (60 * s) or 0
+  local panel = portrait and 0 or (150 * s)
+  local availW = w - panel - pad * 2
+  local availH = h - ch - topH - pad * 2
+  local cell = math.min(availH / ROWS, availW / COLS)
   local bw, bh = cell * COLS, cell * ROWS
-  local bx = (w - panel - bw) / 2
-  local by = (h - bh) / 2
-  return cell, bx, by, w, h
+  local bx = pad + (availW - bw) / 2
+  local by = pad + topH + (availH - bh) / 2
+  return cell, bx, by, w, h, s, ch, topH, panel, portrait
 end
 
 local function drawBlock(t, px, py, sz, alpha, rot)
   local img = BLK[t]
-  love.graphics.setColor(1, 1, 1, alpha or 1)
+  local c = COL[t] or { 1, 1, 1 }
+  love.graphics.setColor(c[1], c[2], c[3], alpha or 1)
   if img then
     local iw, ih = img:getDimensions()
     love.graphics.draw(img, px + sz / 2, py + sz / 2, rot or 0, sz / iw, sz / ih, iw / 2, ih / 2)
   else
-    local c = COL[t] or { 1, 1, 1 }
-    love.graphics.setColor(c[1], c[2], c[3], alpha or 1)
     love.graphics.rectangle("fill", px + 1, py + 1, sz - 2, sz - 2, 4, 4)
   end
   love.graphics.setColor(1, 1, 1)
 end
 
 function love.draw()
-  local cell, bx, by, w, h = layout()
+  local cell, bx, by, w, h, s, ch, topH, panel, portrait = layout()
   local shx, shy = 0, 0
   if shake > 0 then shx = (love.math.random() * 2 - 1) * shake; shy = (love.math.random() * 2 - 1) * shake end
   love.graphics.push()
   love.graphics.translate(shx, shy)
 
-  -- 棋盘背景
-  love.graphics.setColor(0.10, 0.12, 0.20)
+  -- 棋盘背景（嫩菊绿底 + 梅子青描边）
+  love.graphics.setColor(THEME.board)
   love.graphics.rectangle("fill", bx, by, cell * COLS, cell * ROWS, 8, 8)
-  love.graphics.setColor(0.16, 0.19, 0.30)
+  love.graphics.setColor(THEME.grid[1], THEME.grid[2], THEME.grid[3], 0.5)
+  love.graphics.setLineWidth(1)
   for r = 0, ROWS do love.graphics.line(bx, by + r * cell, bx + cell * COLS, by + r * cell) end
   for c = 0, COLS do love.graphics.line(bx + c * cell, by, bx + c * cell, by + cell * ROWS) end
-  love.graphics.setColor(0.35, 0.5, 0.9, 0.8)
-  love.graphics.setLineWidth(3)
+  love.graphics.setColor(THEME.border[1], THEME.border[2], THEME.border[3], 0.9)
+  love.graphics.setLineWidth(2)
   love.graphics.rectangle("line", bx, by, cell * COLS, cell * ROWS, 8, 8)
   love.graphics.setLineWidth(1)
   love.graphics.setColor(1, 1, 1)
@@ -329,7 +437,8 @@ function love.draw()
   local function cx(x) return bx + (x - 1) * cell end
   local function cy(y) return by + (y - 1) * cell end
 
-  -- 已落方块
+  -- 已落方块（来自 sim.board）
+  local board = game.board
   for y = 1, ROWS do for x = 1, COLS do
     if board[y][x] then
       drawBlock(board[y][x], cx(x), cy(y), cell, 1)
@@ -349,23 +458,22 @@ function love.draw()
   end
   love.graphics.setColor(1, 1, 1)
 
-  if not over then
-    -- ghost
-    local gy = ghostY()
+  if not game.over and game.cur then
+    local cur = game.cur
+    local gy = game:ghostY()
     for r = 1, #cur.m do for c = 1, #cur.m[r] do
       if cur.m[r][c] == 1 then drawBlock(cur.t, cx(cur.x + c - 1), cy(gy + r - 1), cell, 0.22) end
     end end
-    -- 当前块
     for r = 1, #cur.m do for c = 1, #cur.m[r] do
       if cur.m[r][c] == 1 then drawBlock(cur.t, cx(cur.x + c - 1), cy(cur.y + r - 1), cell, 1) end
     end end
   end
 
   -- 掉落拖影
-  for _, d in ipairs(dropTrail) do
-    local a = 1 - d.age / d.life
-    for r = 1, #d.m do for c = 1, #d.m[r] do
-      if d.m[r][c] == 1 then drawBlock(d.t, cx(d.x + c - 1), cy(d.y + r - 1), cell, a * 0.25) end
+  for _, dd in ipairs(dropTrail) do
+    local a = 1 - dd.age / dd.life
+    for r = 1, #dd.m do for c = 1, #dd.m[r] do
+      if dd.m[r][c] == 1 then drawBlock(dd.t, cx(dd.x + c - 1), cy(dd.y + r - 1), cell, a * 0.25) end
     end end
   end
 
@@ -379,30 +487,31 @@ function love.draw()
 
   love.graphics.pop()
 
-  -- 侧栏
-  local px = bx + cell * COLS + 26
-  local py = by + 6
-  love.graphics.setColor(0.85, 0.9, 1)
-  love.graphics.print("分数", px, py); py = py + 22
-  love.graphics.setColor(1, 1, 1); love.graphics.print(string.format("%d", score), px, py); py = py + 40
-  love.graphics.setColor(0.85, 0.9, 1); love.graphics.print("消行", px, py); py = py + 22
-  love.graphics.setColor(1, 1, 1); love.graphics.print(string.format("%d", lines), px, py); py = py + 40
-  love.graphics.setColor(0.85, 0.9, 1); love.graphics.print("等级", px, py); py = py + 22
-  love.graphics.setColor(1, 1, 1); love.graphics.print(string.format("%d", level), px, py); py = py + 46
+  local nm = SHAPES[game.nextType]
+  if portrait then
+    -- 竖屏：顶部 HUD（只留分数），下一个预览在右上按钮左侧
+    local tx, ty = 18 * s, 12 * s
+    love.graphics.setColor(THEME.ink)
+    love.graphics.print(string.format("分数 %d", game.score), tx, ty)
+    local ncell = math.min(cell * 0.38, 10 * s)
+    local cols = #nm[1]
+    local nx = w - 62 * s * 2 - 36 * s - cols * ncell
+    for r = 1, #nm do for c = 1, #nm[r] do
+      if nm[r][c] == 1 then drawBlock(game.nextType, nx + (c - 1) * ncell, ty + 4 * s + (r - 1) * ncell, ncell, 1) end
+    end end
+  else
+    -- 横屏/桌面：右侧栏（只留分数 + 下一个预览）
+    local px = bx + cell * COLS + 22 * s
+    local py = by + 6 * s
+    love.graphics.setColor(THEME.ink)
+    love.graphics.print(string.format("分数 %d", game.score), px, py); py = py + 40 * s
+    local ncell = cell * 0.7
+    for r = 1, #nm do for c = 1, #nm[r] do
+      if nm[r][c] == 1 then drawBlock(game.nextType, px + (c - 1) * ncell, py + (r - 1) * ncell, ncell, 1) end
+    end end
+  end
 
-  love.graphics.setColor(0.85, 0.9, 1); love.graphics.print("下一个", px, py); py = py + 30
-  -- next 预览
-  local nm = SHAPES[nextType]
-  local ncell = cell * 0.7
-  for r = 1, #nm do for c = 1, #nm[r] do
-    if nm[r][c] == 1 then drawBlock(nextType, px + (c - 1) * ncell, py + (r - 1) * ncell, ncell, 1) end
-  end end
-
-  -- 提示
-  love.graphics.setColor(0.6, 0.66, 0.8)
-  love.graphics.print("← → 移动   ↑ 旋转", px, h - 120)
-  love.graphics.print("↓ 软降   空格 瞬降", px, h - 96)
-  love.graphics.print("P 暂停   R 重开", px, h - 72)
+  drawButtons()                                   -- 触屏控制条
 
   -- 全屏消行闪
   if lineFlash > 0 then
@@ -411,16 +520,16 @@ function love.draw()
     love.graphics.setColor(1, 1, 1)
   end
 
-  if paused then
+  if game.paused then
     love.graphics.setColor(0, 0, 0, 0.5); love.graphics.rectangle("fill", 0, 0, w, h)
     love.graphics.setColor(1, 1, 1); love.graphics.printf("已暂停", 0, h / 2 - 20, w, "center")
   end
-  if over then
+  if game.over then
     love.graphics.setColor(0, 0, 0, 0.6); love.graphics.rectangle("fill", 0, 0, w, h)
     love.graphics.setColor(1, 1, 1)
     love.graphics.printf("游戏结束", 0, h / 2 - 40, w, "center")
-    love.graphics.printf(string.format("分数 %d", score), 0, h / 2, w, "center")
-    love.graphics.printf("按 R 重开", 0, h / 2 + 40, w, "center")
+    love.graphics.printf(string.format("分数 %d", game.score), 0, h / 2, w, "center")
+    love.graphics.printf("点右上角重开", 0, h / 2 + 40, w, "center")
   end
   love.graphics.setColor(1, 1, 1)
   capFrame()                                      -- 截图钩子：连拍中
