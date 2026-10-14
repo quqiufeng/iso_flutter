@@ -9,6 +9,10 @@
 >
 > 这些文档是"怎么画才好看 / 动画怎么做才对"的规范，**优先级高于个人直觉**。
 
+> ## 📁 工作文件位置（铁律）
+> **所有生成 / 中间 / 临时文件一律放 `~/iso_gen/`，禁止用 `/tmp`**（`/tmp` 会被清理，已经丢过文件）。
+> 例：`~/iso_gen/<任务>/...`；最终产物再 `cp` 进仓库 `assets/`。
+
 ## 1. 先读规范（`docs/references/`）
 
 | 文档 | 内容 | 必读 |
@@ -59,10 +63,10 @@ WID=$(wmctrl -lx | awk '/iso_demo/{print $1; exit}')   # 或 xdotool search --na
 
 # ③ 激活 + 截图（抓不到时抓 root 再裁）
 xdotool windowactivate "$WID"; xdotool windowraise "$WID"; sleep 1
-import -window "$WID" /tmp/shot.png || { eval "$(xdotool getwindowgeometry --shell "$WID")"; \
-  import -window root -crop ${WIDTH}x${HEIGHT}+${X}+${Y} +repage /tmp/shot.png; }
+import -window "$WID" ~/iso_gen/shot.png || { eval "$(xdotool getwindowgeometry --shell "$WID")"; \
+  import -window root -crop ${WIDTH}x${HEIGHT}+${X}+${Y} +repage ~/iso_gen/shot.png; }
 
-# ④ 看：直接用 Read 打开 /tmp/shot.png（agent 能看图）
+# ④ 看：直接用 Read 打开 ~/iso_gen/shot.png（agent 能看图）
 # ⑤ 调：改代码/图 → cd app && flutter build linux --release → 回 ① 再截
 ```
 
