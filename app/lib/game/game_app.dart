@@ -1,5 +1,6 @@
-// M1 游戏窗口：Flutter 渲染 + 纯 Lua Sim（game/sim，经 Lua host 驱动）。
-// WASD 走 · 空格 pick · P 暂停NPC · R 重开。
+// 兵线对推（左=我方防守 / 右=敌方进攻）：Flutter 渲染 + 纯 Lua Sim（battle.lua）。
+// 1/2/3 选兵种 · 点地面(左半)布兵 · R 重开 · 打掉对方基地即胜。
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -13,7 +14,26 @@ import 'package:iso_engine/iso_render.dart';
 import 'game_runner.dart';
 import 'iso.dart';
 
-const int kGameNpcs = 60;
+// Q版：按 hue 造一套彩色"线稿"调色板（浅底实体 + 深线）
+Palette _tint(double hue) {
+  ui.Color h(double l, [double s = 0.85]) => HSLColor.fromAHSL(1, hue, s, l).toColor();
+  return Palette(
+    page: h(0.97), paper: h(0.90), top: h(0.95),
+    shades: [h(0.72), h(0.80), h(0.85), h(0.88)],
+    hi: h(0.28), mid: h(0.42), lo: h(0.60), faint: h(0.76), lit: h(0.18),
+    halo: h(0.45), haloOpacity: 0.28, dot: h(0.40), text: h(0.32), weight: 0.75,
+  );
+}
+
+const Map<String, String> kTypes = {'1': 'sword', '2': 'archer', '3': 'mage'};
+const Map<String, String> kTypeName = {'sword': '剑士', 'archer': '弓手', 'mage': '法师'};
+// 敌方类型也用同一套 hue 上色
+final Map<double, Palette> kPalCache = {};
+
+Palette _pal(double hue) {
+  final key = (hue / 10).round() * 10.0;
+  return kPalCache[key] ??= _tint(key);
+}
 
 class GameApp extends StatefulWidget {
   const GameApp({super.key});
@@ -22,20 +42,18 @@ class GameApp extends StatefulWidget {
 }
 
 class _GameState extends State<GameApp> with SingleTickerProviderStateMixin {
-  final IsoCam cam = IsoCam(scale: 11);
+  final IsoCam cam = IsoCam(scale: 34);
   final FocusNode _focus = FocusNode();
-  final Set<LogicalKeyboardKey> _keys = {};
-  final Palette pal = Palette.light;
   late final Ticker _ticker;
   Duration _last = Duration.zero;
-  double _acc = 0;
-  bool _paused = false;
+  double _acc = 0, _fps = 0;
+  String _sel = 'sword';
   Map<String, dynamic> _st = const {};
 
   @override
   void initState() {
     super.initState();
-    GameRunner.i.ensure(npcs: kGameNpcs).then((_) {
+    GameRunner.i.ensure().then((_) {
       if (mounted) setState(() {});
     });
     _ticker = createTicker(_onTick)..start();
@@ -44,24 +62,19 @@ class _GameState extends State<GameApp> with SingleTickerProviderStateMixin {
   void _onTick(Duration now) {
     final dt = ((now - _last).inMicroseconds / 1e6).clamp(0.0, 0.1);
     _last = now;
+    if (dt > 0) _fps = _fps == 0 ? 1 / dt : _fps * 0.92 + (1 / dt) * 0.08;
     if (GameRunner.i.ready) {
       _acc += dt;
       const step = 1 / 60;
-      final keys = {
-        'up': _keys.contains(LogicalKeyboardKey.keyW),
-        'down': _keys.contains(LogicalKeyboardKey.keyS),
-        'left': _keys.contains(LogicalKeyboardKey.keyA),
-        'right': _keys.contains(LogicalKeyboardKey.keyD),
-      };
       while (_acc >= step) {
-        _st = GameRunner.i.tick(keys, step);
+        _st = GameRunner.i.step(step);
         _acc -= step;
       }
-      final p = _st['player'];
-      if (p is Map) {
-        cam.x += ((p['x'] as num).toDouble() - cam.x) * 0.12;
-        cam.y += ((p['y'] as num).toDouble() - cam.y) * 0.12;
-      }
+      // 相机对准战场中心
+      final cols = (_st['cols'] as num?)?.toDouble() ?? 12;
+      final rows = (_st['rows'] as num?)?.toDouble() ?? 3;
+      cam.x += ((cols - 1) / 2 - cam.x) * 0.2;
+      cam.y += ((rows - 1) / 2 - cam.y) * 0.2;
     }
     setState(() {});
   }
@@ -73,18 +86,30 @@ class _GameState extends State<GameApp> with SingleTickerProviderStateMixin {
     super.dispose();
   }
 
+  int _laneOf(double gy) {
+    final n = (_st['rows'] as num?)?.toInt() ?? 3;
+    return gy.round().clamp(0, n - 1);
+  }
+
+  /// 相机：把战场铺满视口（启发式；可调）
+  void _fitCam(BoxConstraints cons) {
+    final rows = ((_st['rows'] as num?)?.toDouble() ?? 5);
+    final cols = ((_st['cols'] as num?)?.toDouble() ?? 10);
+    final span = (cols + rows); // 等距下横向跨度 ≈ (cols+rows)·0.707·k
+    cam.scale = math.min(cons.maxWidth / (span * 1.45), cons.maxHeight / (span * 0.75));
+    cam.cx = cons.maxWidth / 2;
+    cam.cy = cons.maxHeight / 2 + cam.scale * 0.9;
+    cam.x = (cols - 1) / 2;
+    cam.y = (rows - 1) / 2;
+  }
+
   void _onKey(KeyEvent e) {
+    if (e is! KeyDownEvent) return;
     final k = e.logicalKey;
-    if (e is KeyDownEvent) {
-      _keys.add(k);
-      if (k == LogicalKeyboardKey.space) GameRunner.i.eval('_GAME:act("pick") return "ok"');
-      if (k == LogicalKeyboardKey.keyP) {
-        _paused = !_paused;
-        GameRunner.i.pauseNpcs(_paused);
-      }
-      if (k == LogicalKeyboardKey.keyR) GameRunner.i.reset(npcs: kGameNpcs);
+    for (final ent in kTypes.entries) {
+      if (k.keyLabel == ent.key) _sel = ent.value;
     }
-    if (e is KeyUpEvent) _keys.remove(k);
+    if (k == LogicalKeyboardKey.keyR) GameRunner.i.reset();
   }
 
   @override
@@ -96,110 +121,166 @@ class _GameState extends State<GameApp> with SingleTickerProviderStateMixin {
         autofocus: true,
         onKeyEvent: _onKey,
         child: Scaffold(
-          backgroundColor: pal.page,
-          body: LayoutBuilder(builder: (ctx, cons) {
-            cam.cx = cons.maxWidth / 2;
-            cam.cy = cons.maxHeight / 2;
-            final n = (_st['npcs'] as List?)?.length ?? 0;
-            return Stack(children: [
-              CustomPaint(size: Size(cons.maxWidth, cons.maxHeight), painter: _GamePainter(cam, pal, _st)),
-              Positioned(
-                left: 12,
-                top: 10,
-                child: Text(
-                  'WASD 走 · 空格 pick · P 暂停NPC(${_paused ? "停" : "动"}) · R 重开 · NPC $n',
-                  style: const TextStyle(fontSize: 13, color: Color(0xFF666666)),
-                ),
-              ),
-            ]);
-          }),
+          backgroundColor: const Color(0xFFEFF0EC),
+          body: Listener(
+            onPointerDown: (e) {
+              final g = cam.pick(e.localPosition.dx, e.localPosition.dy);
+              // 仅左半场可布兵
+              if (g[0] < ((_st['cols'] as num?)?.toDouble() ?? 12) / 2) {
+                GameRunner.i.deploy(_laneOf(g[1]), _sel);
+              }
+              _focus.requestFocus();
+            },
+            child: LayoutBuilder(builder: (ctx, cons) {
+              _fitCam(cons);
+              return Stack(children: [
+                CustomPaint(size: Size(cons.maxWidth, cons.maxHeight), painter: _Painter(cam, _st)),
+                Positioned(left: 12, top: 10, child: _hud()),
+              ]);
+            }),
+          ),
         ),
       ),
     );
   }
+
+  Widget _hud() {
+    final res = (_st['resource'] as num?)?.toDouble() ?? 0;
+    final wave = _st['wave'] ?? 0;
+    final bases = _st['bases'] as Map?;
+    int hp(String s) => ((bases?[s] as Map?)?['hp'] as num?)?.toInt() ?? 100;
+    final over = _st['over'] == true;
+    final winner = _st['winner'];
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('资源 ${res.toStringAsFixed(0)}   ·   波次 $wave   ·   ${_fps.toStringAsFixed(0)} fps',
+          style: const TextStyle(fontSize: 15, color: Color(0xFF333333))),
+      const SizedBox(height: 4),
+      Row(children: [
+        _pill('我方基地 ${hp('left')}', const Color(0xFF3E63DD)),
+        const SizedBox(width: 8),
+        _pill('敌方基地 ${hp('right')}', const Color(0xFFE5484D)),
+      ]),
+      const SizedBox(height: 6),
+      Text('选兵：1 剑士${_sel == "sword" ? "✓" : ""}  2 弓手${_sel == "archer" ? "✓" : ""}  3 法师${_sel == "mage" ? "✓" : ""}   ·   点左半场布兵 · R 重开',
+          style: const TextStyle(fontSize: 13, color: Color(0xFF777777))),
+      if (over)
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(winner == 'left' ? '🏆 我方胜利！' : '💀 基地失守…',
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+        ),
+    ]);
+  }
+
+  Widget _pill(String s, Color c) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        decoration: BoxDecoration(color: c.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(20), border: Border.all(color: c, width: 1)),
+        child: Text(s, style: TextStyle(fontSize: 13, color: c)),
+      );
 }
 
-class _GamePainter extends CustomPainter {
-  _GamePainter(this.cam, this.pal, this.st);
+class _Painter extends CustomPainter {
+  _Painter(this.cam, this.st);
   final IsoCam cam;
-  final Palette pal;
   final Map<String, dynamic> st;
+
+  Proj get _p0 => Proj(origin: const [0, 0], scale: cam.scale, azimuth: 45, elevation: 30);
 
   @override
   void paint(Canvas canvas, Size size) {
+    if (st.isEmpty) return;
+    final rows = (st['rows'] as num?)?.toInt() ?? 3;
+    final cols = (st['cols'] as num?)?.toInt() ?? 12;
     final p = cam.proj();
 
-    // 地面网格
-    final gp = Paint()
-      ..color = pal.faint.withValues(alpha: 0.5)
-      ..strokeWidth = 1;
-    for (var i = -40; i <= 40; i += 4) {
-      final a = cam.screen(i.toDouble(), -40), b = cam.screen(i.toDouble(), 40);
-      canvas.drawLine(Offset(a[0], a[1]), Offset(b[0], b[1]), gp);
-      final c = cam.screen(-40, i.toDouble()), d = cam.screen(40, i.toDouble());
-      canvas.drawLine(Offset(c[0], c[1]), Offset(d[0], d[1]), gp);
+    // 地面：整块填充 + 网格线 + 敌方半场暖色
+    List<double> sp(double x, double y) => cam.screen(x, y);
+    ui.Path quad(double x0, double y0, double x1, double y1) {
+      final a = sp(x0, y0), b = sp(x1, y0), c = sp(x1, y1), d = sp(x0, y1);
+      return ui.Path()
+        ..moveTo(a[0], a[1])
+        ..lineTo(b[0], b[1])
+        ..lineTo(c[0], c[1])
+        ..lineTo(d[0], d[1])
+        ..close();
     }
 
-    // 目标标记
-    final g = st['goal'];
-    if (g is Map) _goal(canvas, g.cast<String, dynamic>());
+    canvas.drawPath(quad(0, 0, cols.toDouble(), rows.toDouble()), Paint()..color = const Color(0xFFCFE0C6));
+    canvas.drawPath(quad(cols / 2, 0, cols.toDouble(), rows.toDouble()), Paint()..color = const Color(0x1FD0873A));
+    final line = Paint()
+      ..color = const Color(0xFF9AA692)
+      ..strokeWidth = 1.4;
+    for (var c = 0; c <= cols; c++) {
+      final a = sp(c.toDouble(), 0), b = sp(c.toDouble(), rows.toDouble());
+      canvas.drawLine(Offset(a[0], a[1]), Offset(b[0], b[1]), line);
+    }
+    for (var r = 0; r <= rows; r++) {
+      final a = sp(0, r.toDouble()), b = sp(cols.toDouble(), r.toDouble());
+      canvas.drawLine(Offset(a[0], a[1]), Offset(b[0], b[1]), line);
+    }
 
-    // 物件 + NPC + 主角：按深度（x+y）排序
-    final items = <Map<String, dynamic>>[];
-    for (final o in (st['props'] as List? ?? const [])) {
-      items.add({...(o as Map).cast<String, dynamic>(), '_t': 'prop'});
-    }
-    for (final o in (st['npcs'] as List? ?? const [])) {
-      items.add({...(o as Map).cast<String, dynamic>(), '_t': 'npc'});
-    }
-    final pl = st['player'];
-    if (pl is Map) items.add({...pl.cast<String, dynamic>(), '_t': 'player'});
-    items.sort((a, b) =>
-        ((a['x'] as num) + (a['y'] as num)).compareTo((b['x'] as num) + (b['y'] as num)));
-    for (final e in items) {
-      _entity(canvas, p, e);
+    // 基地（两端）
+    final bases = st['bases'] as Map?;
+    double hp(String s) => ((bases?[s] as Map?)?['hp'] as num?)?.toDouble() ?? 100;
+    _base(canvas, p, rows, true, const Color(0xFF3E63DD), hp('left'));
+    _base(canvas, p, rows, false, const Color(0xFFE5484D), hp('right'));
+
+    // 单位：按深度排序
+    final items = ((st['units'] as List?) ?? const [])
+        .map((u) => (u as Map).cast<String, dynamic>())
+        .toList()
+      ..sort((a, b) => ((a['x'] as num) + (a['lane'] as num)).compareTo((b['x'] as num) + (b['lane'] as num)));
+    for (final u in items) {
+      _unit(canvas, u);
     }
   }
 
-  void _goal(Canvas c, Map<String, dynamic> g) {
-    final s = cam.screen((g['x'] as num).toDouble(), (g['y'] as num).toDouble());
-    final r = (g['r'] as num).toDouble() * cam.scale;
-    c.drawOval(Rect.fromCenter(center: Offset(s[0], s[1]), width: r * 1.4, height: r * 0.7),
-        Paint()
-          ..color = const Color(0xFF33B36B)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2);
+
+  void _base(Canvas c, Proj p, int rows, bool left, Color col, double hp) {
+    final pal = _pal(left ? 220 : 0);
+    final cols = (st['cols'] as num).toDouble();
+    final x = left ? -0.55 : cols - 0.25;
+    final y = rows / 2 - 0.7;
+    drawSolid(c, slabOf([x, y, 0.8, 1.4, 0.25], 0, 2.2, p, 4), pal, tone: 'hi');
+    final top = cam.screen(x + 0.4, y + 0.7);
+    c.drawPath(
+      ui.Path()
+        ..moveTo(top[0] - 16, top[1] - 62)
+        ..lineTo(top[0] + 16, top[1] - 62)
+        ..lineTo(top[0], top[1] - 94)
+        ..close(),
+      Paint()..color = col,
+    );
+    final bw = 66.0;
+    final frac = (hp / 100).clamp(0.0, 1.0);
+    c.drawRect(Rect.fromLTWH(top[0] - bw / 2, top[1] - 114, bw, 8), Paint()..color = const Color(0x22000000));
+    c.drawRect(Rect.fromLTWH(top[0] - bw / 2, top[1] - 114, bw * frac, 8), Paint()..color = col);
   }
 
-  void _entity(Canvas canvas, Proj p, Map<String, dynamic> e) {
-    final x = (e['x'] as num).toDouble(), y = (e['y'] as num).toDouble();
-    final r = (e['r'] as num).toDouble() * 0.9;
-    final kind = (e['kind'] as String?) ?? '';
-    final t = e['_t'];
-    if (t == 'prop') {
-      switch (kind) {
-        case 'tree':
-          drawSolid(canvas, cylinder(x, y, r * 0.35, 0, 10, p, 20), pal, tone: 'mid');
-          drawSolid(canvas, sphereOf([x, y, 10 + r], r, p), pal, tone: 'hi');
-          break;
-        case 'box':
-          drawSolid(canvas, slabOf([x - r, y - r, r * 2, r * 2, 1], 0, 6, p, 6), pal, tone: 'hi');
-          break;
-        default:
-          drawSolid(canvas, cylinder(x, y, r * 0.3, 0, 3, p, 16), pal, tone: 'mid');
-          drawSolid(canvas, slabOf([x - r, y - r, r * 2, r * 2, r * 0.8], 3, 2, p, 8), pal, tone: 'hi');
-      }
-    } else {
-      final h = t == 'player' ? 5.5 : 4.0;
-      drawSolid(canvas, cylinder(x, y, r * 0.5, 0, h, p, 18), pal, tone: t == 'player' ? 'hi' : 'mid');
-      drawSolid(canvas, sphereOf([x, y, h + r * 0.35], r * 0.55, p), pal, tone: 'hi');
-      if (e['paused'] == true) {
-        final s = cam.screen(x, y);
-        canvas.drawCircle(Offset(s[0], s[1] - h * cam.scale * 0.55), 2.5, Paint()..color = const Color(0xFF999999));
-      }
+  void _unit(Canvas canvas, Map<String, dynamic> u) {
+    final x = (u['x'] as num).toDouble(), lane = (u['lane'] as num).toDouble();
+    final hue = (u['hue'] as num?)?.toDouble() ?? 200;
+    final pal = _pal(hue);
+    final s = cam.screen(x, lane);
+    final p0 = _p0;
+    canvas.save();
+    canvas.translate(s[0], s[1]);
+    // Q版：身体（圆柱）+ 大头（球）+ 眼
+    drawSolid(canvas, cylinder(0, 0, 0.27, 0, 0.7, p0, 12), pal, tone: 'hi');
+    drawSolid(canvas, sphereOf([0, 0, 1.05], 0.32, p0), pal, tone: 'hi');
+    canvas.drawCircle(const Offset(-0.16 * 34 * 1.2649, -0.26 * 34 * 1.2649), 2.2, Paint()..color = const Color(0xFF3A3A3A));
+    canvas.drawCircle(const Offset(0.16 * 34 * 1.2649, -0.26 * 34 * 1.2649), 2.2, Paint()..color = const Color(0xFF3A3A3A));
+    canvas.restore();
+    // HP 条
+    final hp = (u['hp'] as num).toDouble(), max = (u['max'] as num).toDouble();
+    final frac = (hp / max).clamp(0.0, 1.0);
+    if (frac < 0.999) {
+      canvas.drawRect(Rect.fromLTWH(s[0] - 15, s[1] - 62, 30, 4), Paint()..color = const Color(0x33000000));
+      canvas.drawRect(Rect.fromLTWH(s[0] - 15, s[1] - 62, 30 * frac, 4),
+          Paint()..color = u['side'] == 'left' ? const Color(0xFF3E63DD) : const Color(0xFFE5484D));
     }
   }
 
   @override
-  bool shouldRepaint(_GamePainter old) => true;
+  bool shouldRepaint(_Painter old) => true;
 }

@@ -45,3 +45,30 @@
 
 把引擎封装成"AI 可驱动"的游戏运行时（Sim 纯 Lua / Render Flutter + headless 步进 + 输入注入/回放 + 状态内省），
 接上 agent 闭环 → **人类给想法与意见，AI 自己开发/试玩/看画面/迭代**。见 `docs/ai-game-system.md`；闭环方法论见 `docs/automation.md`。
+
+## 6. 自驱视觉闭环：**截图 → 识别 → 调整**（agent 自己跑、自己看、自己改）
+
+> 这就是 `docs/ai-game-system.md` 的"感知—推理—行动"落地：**不用人截图**，agent 自己抓窗口、看画面、改代码、再截。
+
+```bash
+# ① 跑（游戏窗口；或 ISO_EXPORT=<图名> 走离屏出图，无需窗口）
+DISPLAY=:0 ISO_GAME=1 ~/iso_flutter/app/build/linux/x64/release/bundle/iso_app &
+
+# ② 定位窗口（Flutter 窗口 WM_CLASS = com.example.iso_demo）
+WID=$(wmctrl -lx | awk '/iso_demo/{print $1; exit}')   # 或 xdotool search --name iso
+
+# ③ 激活 + 截图（抓不到时抓 root 再裁）
+xdotool windowactivate "$WID"; xdotool windowraise "$WID"; sleep 1
+import -window "$WID" /tmp/shot.png || { eval "$(xdotool getwindowgeometry --shell "$WID")"; \
+  import -window root -crop ${WIDTH}x${HEIGHT}+${X}+${Y} +repage /tmp/shot.png; }
+
+# ④ 看：直接用 Read 打开 /tmp/shot.png（agent 能看图）
+# ⑤ 调：改代码/图 → cd app && flutter build linux --release → 回 ① 再截
+```
+
+**要点**
+- HUD 里有 **fps**（评估渲染开销）；`P` 暂停 NPC、`WASD` 走、`空格` pick、`R` 重开。
+- **纯 Lua 玩法**用 `luajit` 驱动即可，**不需要窗口**（更快）：
+  `luajit iso_engine/lib/lua/game/run.lua --script "goto:14,14;pick" --json --replay`
+- 循环 = **写(码) → build → 跑 → 截图 → 看图 → 改**；人只给"想法/意见"。
+
