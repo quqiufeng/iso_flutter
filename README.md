@@ -26,6 +26,12 @@
 - 目标：**人类给"想法 + 意见"，AI 自己开发 / 试玩 / 看画面 / 迭代 → 一个游戏诞生**。
   详见 [`docs/ai-game-system.md`](docs/ai-game-system.md)、[`game/README.md`](game/README.md)。
 
+### 游戏列表
+| 游戏 | 位置 | 运行 |
+|---|---|---|
+| **兵线对推**（俯视 3/4 · 布兵对推 · 大招/旋斩） | `game/love/` | `love ~/iso_flutter/game/love` |
+| **水晶方块**（俄罗斯方块 · q 版玻璃水晶块） | `game/tetris/` | `love ~/iso_flutter/game/tetris` |
+
 ---
 
 ## 目录结构
