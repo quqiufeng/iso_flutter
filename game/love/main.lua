@@ -229,26 +229,55 @@ local CHARMAP = { sword = "u1", archer = "u2", mage = "u3", goblin = "e1", shoot
 -- 兵种 → Nano Banana 关键帧角色（assets/nb/<name>_<anim>_<i>.png）
 local NBMAP = { sword = "knight", archer = "knight", mage = "knight", goblin = "knight", shooter = "knight", ogre = "knight" }
 
--- 飘伤害数字
+-- 飘伤害数字 / 大招特效 / 闪光 / 震屏
 local POPS = {}
+local ULT_FX = nil
+local FLASH_T = 0
+local SHAKE = 0
+local ULT_DUR = 1.1
+local WHIRL_DUR = 0.75
 
--- NB 关键帧动画：攻击 / 走 / 站；含受击闪白 + 挥砍弧光
+-- NB 关键帧动画：大招 / 旋风斩 / 攻击 / 走 / 站；含受击闪红 + 弧光
 local function drawNBUnit(u, x, y, name)
   local A = NBANIM[name]
   if not A then return false end
   local h = 1.9 * cam.s
   local dir = (u.side == "right") and -1 or 1
-  local rate = (battle.TYPES[u.type] or {}).rate
   local img
-  if u.attacking and A.attack and #A.attack > 0 and rate and rate > 0 then
-    -- 攻击：把「举剑→劈砍→收势」同步到攻击间隔（不循环，从头放）
+  if u._castUlt and u._castUlt > 0 and A.ult and #A.ult > 0 then
+    -- 大招：蓄力→举剑→砸地（不循环，从头放）
+    local p  = 1 - u._castUlt / ULT_DUR
+    local fi = math.min(#A.ult, math.floor(p * #A.ult) + 1)
+    img = A.ult[fi]
+  elseif A.whirl and #A.whirl > 0 and ((u._whirl and u._whirl > 0) or (u.attacking and u.type == "ogre")) then
+    -- 旋转挥刀（旋风斩）：玩家技能(W) 或 食人魔攻击
+    local p
+    if u._whirl and u._whirl > 0 then p = 1 - u._whirl / WHIRL_DUR
+    else p = 1 - (u.cd or 0) / ((battle.TYPES[u.type] or {}).rate or 1) end
+    local fi = math.min(#A.whirl, math.floor(p * #A.whirl) + 1)
+    img = A.whirl[fi]
+    -- 旋转刀光（多道弧线绕身飞转 + 扩散环）
+    local rot = p * 6.283 * 2
+    love.graphics.setLineWidth(7)
+    for k = 0, 3 do
+      local a0 = rot + k * 1.571
+      love.graphics.setColor(1, 1, 1, 0.85 * (1 - p))
+      love.graphics.arc("line", "open", x, y - h * 0.45, h * 0.85, a0, a0 + 1.6)
+    end
+    for k = 0, 1 do
+      local rr = (1 - p) * (0.4 + k * 0.35)
+      love.graphics.setColor(0.8, 0.92, 1, 0.5 * (1 - rr)); love.graphics.setLineWidth(5)
+      love.graphics.ellipse("line", x, y, (0.9 - rr) * h * 0.8, (0.9 - rr) * h * 0.8 * FY)
+    end
+    love.graphics.setColor(1, 1, 1); love.graphics.setLineWidth(1)
+  elseif u.attacking and A.attack and #A.attack > 0 and (battle.TYPES[u.type] or {}).rate then
+    -- 攻击：举剑→劈砍→收势，同步攻击间隔
+    local rate = (battle.TYPES[u.type] or {}).rate
     local p  = 1 - (u.cd or 0) / rate
     local fi = math.min(#A.attack, math.floor(p * #A.attack) + 1)
     img = A.attack[fi]
-    -- 挥砍弧光（劈砍阶段）
     if p > 0.15 and p < 0.72 then
-      love.graphics.setColor(1, 1, 1, 0.6 * (1 - math.abs(p - 0.42) / 0.3))
-      love.graphics.setLineWidth(3)
+      love.graphics.setColor(1, 1, 1, 0.6 * (1 - math.abs(p - 0.42) / 0.3)); love.graphics.setLineWidth(3)
       love.graphics.arc("line", "open", x + dir * 0.22 * h, y - h * 0.5, h * 0.34, -0.95 * dir, 0.75 * dir)
       love.graphics.setColor(1, 1, 1); love.graphics.setLineWidth(1)
     end
@@ -285,6 +314,7 @@ function love.load()
     loadAnim(nm, "walk", 12); loadAnim(nm, "idle", 12); loadAnim(nm, "hit", 6); loadAnim(nm, "death", 12)
   end
   loadNbAnim("knight", "walk", 4); loadNbAnim("knight", "idle", 4); loadNbAnim("knight", "attack", 3)
+  loadNbAnim("knight", "whirl", 5); loadNbAnim("knight", "ult", 4)
   game = battle.new({ cols = 10, rows = 8 })
   fit()
 end
@@ -302,16 +332,50 @@ function love.update(d)
     end
     u._lastHp = u.hp
     if u._flash then u._flash = u._flash - d; if u._flash <= 0 then u._flash = nil end end
+    if u._castUlt then u._castUlt = u._castUlt - d; if u._castUlt <= 0 then u._castUlt = nil end end
+    if u._whirl then u._whirl = u._whirl - d; if u._whirl <= 0 then u._whirl = nil end end
   end
   for i = #POPS, 1, -1 do
     POPS[i].t = POPS[i].t + d
     if POPS[i].t > 0.9 then table.remove(POPS, i) end
   end
+  if ULT_FX then
+    ULT_FX.t = ULT_FX.t + d
+    if not ULT_FX.impacted and ULT_FX.t >= 0.45 * ULT_FX.life then
+      ULT_FX.impacted = true; SHAKE = 15; FLASH_T = 0.3     -- 砸地瞬间：震屏 + 闪光
+    end
+    if ULT_FX.t > ULT_FX.life then ULT_FX = nil end
+  end
+  if FLASH_T > 0 then FLASH_T = math.max(0, FLASH_T - d) end
+  SHAKE = math.max(0, SHAKE - d * 45)
 end
 
 function love.keypressed(k)
   if TYPESEL[k] then sel = TYPESEL[k] end
-  if k == "r" then game = battle.new({ cols = 10, rows = 8 }); fit() end
+  if k == "r" then game = battle.new({ cols = 10, rows = 8 }); fit(); POPS = {}; ULT_FX = nil; FLASH_T = 0; SHAKE = 0 end
+  if (k == "space" or k == "q") and not game.over then
+    if game:ultimate() then                        -- 大招：全体敌方受创
+      local lead
+      for _, u in ipairs(game.units) do
+        if u.side == "left" and u.hp > 0 and (not lead or u.x > lead.x) then lead = u end
+      end
+      local x, y
+      if lead then lead._castUlt = ULT_DUR; x, y = sx(lead.x, lead.lane)
+      else x, y = sx(1, game.rows / 2) end
+      ULT_FX = { x = x, y = y, t = 0, life = ULT_DUR, sparks = {} }
+      for k2 = 1, 18 do
+        local ang = love.math.random() * 6.283
+        ULT_FX.sparks[k2] = { dx = math.cos(ang), dy = math.sin(ang) * FY, s = 1.5 + love.math.random() * 2.5 }
+      end
+    end
+  end
+  if k == "w" and not game.over then                       -- 旋转挥刀：全体我方单位旋风斩
+    if game:whirlwind() then
+      for _, u in ipairs(game.units) do
+        if u.side == "left" and u.hp > 0 then u._whirl = WHIRL_DUR end
+      end
+    end
+  end
 end
 
 function love.mousepressed(mx, my, btn)
@@ -454,6 +518,11 @@ local function drawUnit(u)
 end
 
 function love.draw()
+  -- 震屏（大招砸地）
+  local shx, shy = 0, 0
+  if SHAKE > 0 then shx = (love.math.random() * 2 - 1) * SHAKE; shy = (love.math.random() * 2 - 1) * SHAKE end
+  love.graphics.push()
+  love.graphics.translate(shx, shy)
   -- 地面：向四周多铺 PAD 格，铺满整个窗口（战场内棋盘格 + 场外暗一档）
   local PAD = 7
   for c = -PAD, game.cols - 1 + PAD do
@@ -504,10 +573,66 @@ function love.draw()
   end
   love.graphics.setColor(1, 1, 1)
 
+  -- 大招特效：蓄力金晕 → 冲击环 + 放射光 + 火花
+  if ULT_FX then
+    local p = ULT_FX.t / ULT_FX.life
+    local cx, cy, R = ULT_FX.x, ULT_FX.y, 9 * cam.s
+    if p < 0.45 then
+      local q = p / 0.45
+      for k = 1, 4 do
+        local a = 0.22 * (1 - k / 5) * q
+        love.graphics.setColor(1, 0.82, 0.32, a)
+        love.graphics.ellipse("fill", cx, cy, (2.4 - k * 0.5) * cam.s * q, (2.4 - k * 0.5) * cam.s * q * FY)
+      end
+      love.graphics.setColor(1, 0.95, 0.7, q); love.graphics.setLineWidth(3)
+      for k = 1, 6 do
+        local ang = k / 6 * 6.283 + p * 6
+        love.graphics.line(cx, cy - 2 * cam.s, cx + math.cos(ang) * 1.2 * cam.s * q, cy - 2 * cam.s + math.sin(ang) * 1.2 * cam.s * FY * q)
+      end
+      love.graphics.setColor(1, 1, 1); love.graphics.setLineWidth(1)
+    else
+      local q = (p - 0.45) / 0.55
+      love.graphics.setColor(1, 0.85, 0.4, 0.35 * (1 - q))
+      love.graphics.ellipse("fill", cx, cy, (0.3 + q) * R * 0.6, (0.3 + q) * R * 0.6 * FY)
+      for k = 0, 2 do
+        local rr = q + k * 0.22
+        if rr <= 1.05 then
+          local aa = 0.75 * (1 - rr)
+          love.graphics.setColor(1, 0.9, 0.5, aa); love.graphics.setLineWidth(10 * (1 - rr) + 2)
+          love.graphics.ellipse("line", cx, cy, rr * R, rr * R * FY)
+        end
+      end
+      love.graphics.setLineWidth(3)
+      for a = 0, 11 do
+        local ang = a / 12 * 6.283
+        love.graphics.setColor(1, 0.95, 0.6, 0.6 * (1 - q))
+        love.graphics.line(cx + math.cos(ang) * 0.2 * R, cy + math.sin(ang) * 0.2 * R * FY,
+                           cx + math.cos(ang) * (0.4 + q) * R, cy + math.sin(ang) * (0.4 + q) * R * FY)
+      end
+      love.graphics.setColor(1, 1, 1); love.graphics.setLineWidth(1)
+      for _, s in ipairs(ULT_FX.sparks) do
+        local dd = q * s.s * R * 0.6
+        love.graphics.setColor(1, 0.8, 0.35, 0.9 * (1 - q))
+        love.graphics.circle("fill", cx + s.dx * dd, cy + s.dy * dd, 3 * (1 - q) + 1)
+      end
+      love.graphics.setColor(1, 1, 1)
+    end
+  end
+
+  love.graphics.pop()
+
+  -- 全屏闪光（不随震屏）
+  if FLASH_T > 0 then
+    love.graphics.setColor(1, 1, 0.92, FLASH_T / 0.3 * 0.7)
+    local w, hh = love.graphics.getDimensions()
+    love.graphics.rectangle("fill", 0, 0, w, hh)
+    love.graphics.setColor(1, 1, 1)
+  end
+
   -- HUD
   love.graphics.setColor(0.2, 0.2, 0.2)
   love.graphics.print(string.format("资源 %.0f   波次 %d   我方 %d / 敌方 %d", game.resource, game.wave, game.bases.left.hp, game.bases.right.hp), 12, 10)
-  love.graphics.print("1 剑士  2 弓手  3 法师   ·   点左半场布兵   ·   R 重开", 12, 32)
+  love.graphics.print("1 剑士  2 弓手  3 法师  ·  点左半场布兵  ·  空格 大招  ·  W 旋斩  ·  R 重开", 12, 32)
   if game.over then
     love.graphics.print(game.winner == "left" and "我方胜利！" or "基地失守…", 12, 60)
   end

@@ -50,6 +50,8 @@ function M.new(opts)
     resource = opts.resource or 120,      -- 我方资源（随时间增长）
     units = {},                            -- {side,type,lane,x,hp,max,cd}
     spawnTimer = 2.0,                      -- 敌方下次刷兵倒计时
+    ultCd = 0,                             -- 大招冷却
+    whirlCd = 0,                           -- 旋斩冷却
     wave = 0,
     over = false, winner = nil,
     log = {},
@@ -108,6 +110,8 @@ function M:step(dt)
   -- 敌方刷兵
   self.spawnTimer = self.spawnTimer - dt
   if self.spawnTimer <= 0 then self:_spawnEnemy() end
+  self.ultCd = math.max(0, (self.ultCd or 0) - dt)
+  self.whirlCd = math.max(0, (self.whirlCd or 0) - dt)
 
   -- 单位：有目标→停下攻击；否则推进
   for _, u in ipairs(self.units) do
@@ -157,6 +161,35 @@ function M:step(dt)
   -- 胜负
   if self.bases.right.hp <= 0 then self.over, self.winner = true, "left"
   elseif self.bases.left.hp <= 0 then self.over, self.winner = true, "right" end
+end
+
+-- 大招：全体敌方受创（AoE），带冷却
+function M:ultimate()
+  if (self.ultCd or 0) > 0 then return false end
+  self.ultCd = 14
+  for _, u in ipairs(self.units) do
+    if u.side == "right" and u.hp > 0 then u.hp = u.hp - 55 end
+  end
+  return true
+end
+
+-- 旋转挥刀（旋风斩）：全体我方单位原地旋风斩，各自对周围敌方 AoE，带冷却
+function M:whirlwind()
+  if (self.whirlCd or 0) > 0 then return nil end
+  local any = false
+  for _, u in ipairs(self.units) do
+    if u.side == "left" and u.hp > 0 then
+      any = true
+      for _, o in ipairs(self.units) do
+        if o.side == "right" and o.hp > 0 and math.abs(o.x - u.x) <= 2.5 and math.abs(o.lane - u.lane) <= 1.5 then
+          o.hp = o.hp - 40
+        end
+      end
+    end
+  end
+  if not any then return nil end
+  self.whirlCd = 6
+  return true
 end
 
 function M:tickN(n, dt) for _ = 1, n do self:step(dt or 1 / 60) end end
