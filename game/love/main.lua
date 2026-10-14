@@ -83,6 +83,8 @@ end
 
 local sel = "sword"
 local TYPESEL = { ["1"] = "sword", ["2"] = "archer", ["3"] = "mage" }
+-- 兵种 → 分件组装角色（char.sh 生成；可换武器 + 染色）
+local CHARMAP = { sword = "u1", archer = "u2", mage = "u3", goblin = "e1", shooter = "e2", ogre = "e3" }
 
 function love.load()
   love.graphics.setBackgroundColor(0.94, 0.94, 0.92)
@@ -95,7 +97,7 @@ function love.load()
     if ok then love.graphics.setFont(f) end
   end
   loadSprites()
-  for _, nm in ipairs({ "hero", "foe1", "foe2" }) do
+  for _, nm in ipairs({ "u1", "u2", "u3", "e1", "e2", "e3" }) do
     loadAnim(nm, "walk", 12); loadAnim(nm, "idle", 12); loadAnim(nm, "hit", 6); loadAnim(nm, "death", 12)
   end
   game = battle.new()
@@ -161,7 +163,7 @@ end
 local function drawUnit(u)
   local x, y = sx(u.x, u.lane)
   local t = love.timer.getTime()
-  local nm = (u.side == "left") and "hero" or (u.type == "goblin" and "foe1" or "foe2")
+  local nm = CHARMAP[u.type] or ((u.side == "left") and "u1" or "e1")
   local A = ANIM[nm]
   if A and A.walk and #A.walk > 0 then
     local anim = (u.moving and A.walk) or A.idle
