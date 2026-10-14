@@ -67,10 +67,37 @@ adb shell cat $DIR/tetris_state.json
 # ② 玩：写指令（每行一条；内容变了才执行；# 行是注释）
 printf 'act:rotate\nact:left\nact:hard\n' | adb shell "cat > $DIR/tetris_cmd.txt"
 ```
-指令：`act:left|right|rotate|soft|hard|pause`、`restart`。
+指令：`act:left|right|rotate|soft|hard|pause`、`restart`、`hold`（冻结重力）/`release`（恢复）。
+> 用网络/文件桥驱动时，因读写有延迟，方块会被重力提前锁死 → **先发 `hold` 冻结重力**，由 agent 用 `hard` 完全掌控落子。
 
 **闭环**：`读 state → 决策 → 写 cmd → (游戏执行) → 再读`。示例 agent 见 `~/iso_gen/tetris/drive_phone.py`
-（读 `queue` 规划、按启发式落子；实测 33 手消 9 行 1100 分）。
+（读 `queue` 做 1 步前瞻落子；实测 **130 块 · 消 38 行 · 11200 分**）。
+headless 同款 AI：`~/iso_gen/tetris/ai.lua`（145 块 · 43 行 · 12400 分，可回放）。
+
+## 在 Android 上运行
+**LÖVE 就是个「载入器」**：官方 normal APK 不含游戏，把 `.love` 交给它即可。
+```bash
+# 1) 装运行时（只需一次）：官方 normal APK（无内嵌游戏）
+adb install love-11.5-android.apk        # 包名 org.love2d.android
+# 2) 打包游戏
+cd game/tetris && zip -q -9 -r /tmp/tetris.love main.lua sim.lua conf.lua assets
+# 3) 推到 app 私有外部目录（scoped storage 下本应用可读；/sdcard/lovegame 那条官方 fallback 已不可用）
+adb push /tmp/tetris.love /sdcard/Android/data/org.love2d.android/files/tetris.love
+# 4) 用 intent 启动
+adb shell am start -n org.love2d.android/.GameActivity -a android.intent.action.VIEW \
+  -d "file:///sdcard/Android/data/org.love2d.android/files/tetris.love" -t application/octet-stream
+```
+> 官方载入器找游戏的顺序：① intent 传入 → ② APK assets 里 `game.love`（embed 版）→ ③ `/sdcard/lovegame/main.lua`。
+> 我们走 ①；`-embed` APK 是把它做成「自带游戏的独立 App」时才用。
+
+### 打「真 App」（自带图标、点开即玩）
+要正式发布就用 **love-android 源码 + embed**（需 Android **SDK + NDK + JDK**）：
+1. `git clone https://github.com/love2d/love-android`；
+2. 游戏放进 `app/src/main/assets/game.love`；
+3. 改 `AndroidManifest.xml`（应用名/图标/竖屏锁定）与 `build.gradle`（applicationId/版本/签名）；
+4. `./gradlew assembleNormalRelease` → APK（上架再出 `.aab`）；
+5. `adb install` 装机。
+> 首次要下 ~1–2GB SDK/NDK 并编 LÖVE 本体（几十分钟）；之后改游戏只需重打包（快）。
 
 ## 文件
 | 文件 | 说明 |

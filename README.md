@@ -30,7 +30,7 @@
 | 游戏 | 位置 | 运行 |
 |---|---|---|
 | **兵线对推**（俯视 3/4 · 布兵对推 · 大招/旋斩） | `game/love/` | `love ~/iso_flutter/game/love` |
-| **水晶方块**（俄罗斯方块 · q 版玻璃水晶块） | `game/tetris/` | `love ~/iso_flutter/game/tetris` |
+| **水晶方块**（俄罗斯方块 · q 版玻璃水晶块 · 纯 Lua Sim + 落子记忆 + 接口驱动 + Android 可玩） | `game/tetris/` | `love ~/iso_flutter/game/tetris`（手机见其 README） |
 
 ---
 
