@@ -5,6 +5,8 @@
 把 anatomy（等距插画）的引擎**全量移植为 Dart 与 Lua 两份等价实现**，在 **Flutter 里离屏渲染**出
 **PNG / GIF / MP4**（发微信），并可与用户交互（拖拽开盖、实时特效）。**无浏览器、无 node、无 JS。**
 
+> 实现 / 架构 / 技术 / 原理 → [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+
 ```
 iso_flutter/                       # 独立仓（自包含）
   bin/iso.sh                       # 入口 CLI：render / anim → PNG / GIF / MP4
