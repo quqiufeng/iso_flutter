@@ -94,8 +94,27 @@ local function render(path)
   local f = io.open(path, "wb"); f:write(fd:getString()); f:close()
 end
 
+-- 逐帧导出（动画 GIF 用）：RIG_ANIM=<clip> RIG_ANIM_DIR=<dir> RIG_ANIM_N=<帧数>
+local function renderAnim(clip, dir, n)
+  n = n or 20
+  local dur = (def.clips[clip] and def.clips[clip].duration) or 1
+  local cw, ch = 260, 320
+  for i = 0, n - 1 do
+    R:setClip(clip, { time = i / n * dur }); R:_apply()
+    local c = love.graphics.newCanvas(cw, ch)
+    love.graphics.setCanvas(c); love.graphics.clear(0.94, 0.94, 0.90)
+    R:draw(cw / 2, ch - 14, 0.16, false)
+    love.graphics.setCanvas()
+    local fd = c:newImageData():encode("png")
+    local f = io.open(string.format("%s/%s_%03d.png", dir, clip, i), "wb"); f:write(fd:getString()); f:close()
+  end
+end
+
 function love.load()
-  if os.getenv("RIG_EXPORT") then render(os.getenv("RIG_EXPORT")); love.event.quit()
+  if os.getenv("RIG_ANIM") then
+    renderAnim(os.getenv("RIG_ANIM"), os.getenv("RIG_ANIM_DIR") or "/tmp", tonumber(os.getenv("RIG_ANIM_N") or "20"))
+    love.event.quit()
+  elseif os.getenv("RIG_EXPORT") then render(os.getenv("RIG_EXPORT")); love.event.quit()
   else R:setClip("walk"); love.graphics.setBackgroundColor(0.94, 0.94, 0.90) end
 end
 function love.update(dt) if not os.getenv("RIG_EXPORT") then R:update(dt) end end

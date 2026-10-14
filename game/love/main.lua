@@ -4,9 +4,10 @@
 local root = love.filesystem.getSource():gsub("/game/love$", "")
 
 -- Lua 模块（标准 require 走真实文件系统）
-package.path = root .. "/iso_engine/lib/lua/game/?.lua;" .. package.path
+package.path = root .. "/iso_engine/lib/lua/game/?.lua;" .. root .. "/iso_engine/lib/lua/?.lua;" .. package.path
 
 local battle = require("battle")
+local rig = require("rig")
 
 -- 加载 CC0 角色帧（game/love/assets/chars/<name>_<anim>_<i>.png）
 ANIM = {}
@@ -32,11 +33,67 @@ function loadImage(path)
   return ok and img or nil
 end
 
--- 等距投影（地面 x,y → 屏幕相对）
 local CA, SA, SE, CE, U = 0.70710678, 0.70710678, 0.5, 0.86602540, 1.2649110640673518
+local cam  -- 前向声明（drawRigUnit 会用到，稍后赋值）
+
+-- 骨骼骑士（Nano Banana 生成角色 → cutparts.sh 切件；见 example/rig-knight）
+local RIGDEF
+local function loadRigDef()
+  local dir = root .. "/example/rig-knight/parts/"
+  local function im(f) local x = loadImage(dir .. f); if x then x:setFilter("linear", "linear") end; return x end
+  local function att(f, w, h, px, py) return { img = im(f), w = w, h = h, pivotX = px, pivotY = py } end
+  RIGDEF = {
+    bones = {
+      { name = "root" },
+      { name = "spine", parent = "root",  x = 0,    y = -398 },
+      { name = "chest", parent = "spine", x = 0,    y = -506 },
+      { name = "head",  parent = "chest", x = 0,    y = 0 },
+      { name = "armL",  parent = "chest", x = -248, y = 90 },
+      { name = "armR",  parent = "chest", x = 248,  y = 90 },
+      { name = "legL",  parent = "spine", x = -103, y = 0 },
+      { name = "legR",  parent = "spine", x = 103,  y = 0 },
+    },
+    slots = {
+      { name = "armL",  bone = "armL",  order = 1, att = att("armL.png",  208, 633, 135, 0) },
+      { name = "legL",  bone = "legL",  order = 2, att = att("legL.png",  206, 398, 103, 0) },
+      { name = "legR",  bone = "legR",  order = 3, att = att("legR.png",  206, 398, 103, 0) },
+      { name = "torso", bone = "spine", order = 4, att = att("torso.png", 412, 506, 206, 506) },
+      { name = "head",  bone = "head",  order = 5, att = att("head.png",  620, 904, 310, 904) },
+      { name = "armR",  bone = "armR",  order = 6, att = att("armR.png",  208, 633, 73,  0) },
+    },
+    clips = {
+      idle = { duration = 2.4, loop = true, bones = {
+        spine = { { t = 0, y = -398 }, { t = 1.2, y = -404, ease = "inout" }, { t = 2.4, y = -398, ease = "inout" } },
+        chest = { { t = 0, rot = 0.015 }, { t = 1.2, rot = -0.02, ease = "inout" }, { t = 2.4, rot = 0.015, ease = "inout" } },
+        armL  = { { t = 0, rot = 0.03 }, { t = 1.2, rot = 0.07, ease = "inout" }, { t = 2.4, rot = 0.03, ease = "inout" } },
+        armR  = { { t = 0, rot = -0.03 }, { t = 1.2, rot = -0.07, ease = "inout" }, { t = 2.4, rot = -0.03, ease = "inout" } },
+      } },
+      walk = { duration = 0.72, loop = true, bones = {
+        spine = { { t = 0, y = -398 }, { t = 0.18, y = -408, ease = "out" }, { t = 0.36, y = -398, ease = "in_" }, { t = 0.54, y = -408, ease = "out" }, { t = 0.72, y = -398, ease = "in_" } },
+        chest = { { t = 0, rot = 0.05 }, { t = 0.36, rot = -0.05 }, { t = 0.72, rot = 0.05 } },
+        head  = { { t = 0, rot = -0.03 }, { t = 0.36, rot = 0.03 }, { t = 0.72, rot = -0.03 } },
+        armL  = { { t = 0, rot = -0.55 }, { t = 0.36, rot = 0.55 }, { t = 0.72, rot = -0.55 } },
+        armR  = { { t = 0, rot = 0.55 }, { t = 0.36, rot = -0.55 }, { t = 0.72, rot = 0.55 } },
+        legL  = { { t = 0, rot = 0.22, y = 0 }, { t = 0.18, rot = -0.05, y = -22, ease = "out" }, { t = 0.36, rot = -0.22, y = 0 }, { t = 0.72, rot = 0.22, y = 0 } },
+        legR  = { { t = 0, rot = -0.22, y = 0 }, { t = 0.54, rot = 0.05, y = -22, ease = "out" }, { t = 0.72, rot = -0.22, y = 0 } },
+      } },
+    },
+  }
+end
+
+local RIGUNITS = setmetatable({}, { __mode = "k" })
+local function drawRigUnit(u, x, y)
+  local R = RIGUNITS[u]
+  if not R then R = rig.new(RIGDEF); RIGUNITS[u] = R; u.phase = (u.x * 0.7 + u.lane * 1.3) end
+  local clip = u.moving and "walk" or "idle"
+  R:setClip(clip, { time = (love.timer.getTime() + u.phase) % RIGDEF.clips[clip].duration })
+  R:draw(x, y, 2.0 * cam.s / 1808, u.side == "right")
+end
+
+-- 等距投影（地面 x,y → 屏幕相对）
 local function iso(x, y) return (x * CA - y * SA) * U, (x * SA + y * CA) * SE * U end
 
-local cam = { ox = 0, oy = 0, s = 40 }
+cam = { ox = 0, oy = 0, s = 40 }
 local function sx(x, y) local a, b = iso(x, y); return cam.ox + a * cam.s, cam.oy + b * cam.s end
 
 local SPR, PART, game
@@ -97,6 +154,7 @@ function love.load()
     if ok then love.graphics.setFont(f) end
   end
   loadSprites()
+  loadRigDef()
   for _, nm in ipairs({ "u1", "u2", "u3", "e1", "e2", "e3" }) do
     loadAnim(nm, "walk", 12); loadAnim(nm, "idle", 12); loadAnim(nm, "hit", 6); loadAnim(nm, "death", 12)
   end
@@ -163,6 +221,17 @@ end
 local function drawUnit(u)
   local x, y = sx(u.x, u.lane)
   local t = love.timer.getTime()
+  -- 骨骼骑士（Nano Banana 母图 → cutparts 切件 → 绑骨）
+  if RIGDEF then
+    drawRigUnit(u, x, y)
+    if u.hp < u.max then
+      local bw = 32
+      love.graphics.setColor(0, 0, 0, 0.2); love.graphics.rectangle("fill", x - bw / 2, y - 1.7 * cam.s, bw, 4)
+      local col = u.side == "left" and { 0.24, 0.39, 0.87 } or { 0.9, 0.28, 0.3 }
+      love.graphics.setColor(col); love.graphics.rectangle("fill", x - bw / 2, y - 1.7 * cam.s, bw * (u.hp / u.max), 4); love.graphics.setColor(1, 1, 1)
+    end
+    return
+  end
   local nm = CHARMAP[u.type] or ((u.side == "left") and "u1" or "e1")
   local A = ANIM[nm]
   if A and A.walk and #A.walk > 0 then
