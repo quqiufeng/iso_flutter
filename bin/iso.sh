@@ -41,6 +41,7 @@ case "$CMD" in
     ffmpeg -y -framerate 60 -i "$FD/f%04d.png" \
       -vf "scale=iw:ih:flags=lanczos,split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse" "$GIF" >/dev/null 2>&1
     ffmpeg -y -framerate 60 -i "$FD/f%04d.png" -c:v libx264 -pix_fmt yuv420p -movflags +faststart "$MP4" >/dev/null 2>&1
+    rm -rf "$FD"
     echo "$MP4"; echo "$GIF" ;;
   *) echo "未知命令: $CMD" >&2; exit 2 ;;
 esac

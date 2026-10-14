@@ -72,7 +72,19 @@ class Palette {
 
 final _pathRe = RegExp(r'([MLZmlz])([^MLZmlz]*)');
 
+// d 字符串 → ui.Path 的缓存（同串复用，避免每帧重复解析几何）
+final Map<String, ui.Path> _pathCache = {};
+
 ui.Path parsePath(String d) {
+  final hit = _pathCache[d];
+  if (hit != null) return hit;
+  final p = _parsePath(d);
+  if (_pathCache.length > 4096) _pathCache.clear();
+  _pathCache[d] = p;
+  return p;
+}
+
+ui.Path _parsePath(String d) {
   final path = ui.Path();
   for (final m in _pathRe.allMatches(d)) {
     final cmd = m.group(1)!;

@@ -153,20 +153,28 @@ Future<void> _ensureLua() async {
   if (_luaTmp != null) return;
   final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
   final dir = Directory.systemTemp.createTempSync('iso_lua_');
+  final figures = <String>[];
   for (final key in manifest.listAssets()) {
     if (!key.endsWith('.lua')) continue;
-    File('${dir.path}/${key.split('/').last}').writeAsStringSync(await rootBundle.loadString(key));
+    final name = key.split('/').last;
+    File('${dir.path}/$name').writeAsStringSync(await rootBundle.loadString(key));
+    if (key.contains('/figures/')) figures.add(name.substring(0, name.length - 4));
   }
+  // 预编译一次：把图函数装进 Lua 全局表 _FIGS（之后每帧只 call，不再 dofile/重编译引擎）
+  final list = figures.map((n) => '"$n"').join(', ');
+  _lua.run('package.path = "${dir.path}/?.lua;" .. package.path\n'
+      '_FIGS = {}\n'
+      'for _, n in ipairs({$list}) do _FIGS[n] = dofile("${dir.path}/" .. n .. ".lua") end\n'
+      'return "ok"');
   _luaTmp = dir;
 }
 
 List<dynamic> _runLuaFigure(String name, double lift, double time) {
-  final dir = _luaTmp!.path;
-  final code = 'package.path = "$dir/?.lua;" .. package.path\n'
-      'local f = dofile("$dir/$name.lua")\n'
-      'return f($lift, $time)';
-  return jsonDecode(_lua.run(code)) as List<dynamic>;
+  // 只调用已编译好的图函数（B1：不再每帧 dofile）
+  return jsonDecode(_lua.run('return _FIGS["$name"]($lift, $time)')) as List<dynamic>;
 }
+
+String? _luaError; // 只记一次错误
 
 class _LuaSolid implements SolidPaths {
   _LuaSolid(this.fill, this.outline, this.crease, this.top, this.shades, this.bevel);
@@ -180,7 +188,17 @@ class _LuaSolid implements SolidPaths {
 
 void tmallGenieLuaFigure(ui.Canvas c, Palette pal, double lift, double time) {
   if (_luaTmp == null) return; // assets 尚未解包好
-  for (final op in _runLuaFigure('tmall_genie', lift, time)) {
+  final List<dynamic> ops;
+  try {
+    ops = _runLuaFigure('tmall_genie', lift, time);
+  } catch (e) {
+    if (_luaError == null) {
+      _luaError = '$e';
+      stderr.writeln('[iso] Lua 图出错：$e');
+    }
+    return; // 出错不绘制，避免 paint 抛异常
+  }
+  for (final op in ops) {
     final m = (op as Map).cast<String, dynamic>();
     switch (m['k'] as String) {
       case 'halo':
@@ -320,6 +338,10 @@ class _Painter extends CustomPainter {
   final double lift, time;
   final Palette pal;
 
+  // 渲染结果缓存：lift/time/主题未变则复用上一张（B3：避免每帧重渲 + 纹理 churn）
+  static String? _cacheKey;
+  static ui.Image? _cacheImg;
+
   @override
   void paint(Canvas canvas, Size size) {
     // 只用整数倍缩放，避免小数缩放糊线
@@ -327,21 +349,26 @@ class _Painter extends CustomPainter {
     s = s >= 3 ? 3 : (s >= 2 ? 2 : 1);
     final dst = Rect.fromLTWH((size.width - W * s) / 2, (size.height - H * s) / 2, W * s, H * s);
 
-    // 离屏按 2× 渲染（超采样）再缩放显示 → 细线锐利、抗锯齿细腻（等价 gif 的 1120×1320）
+    // 离屏按 2× 渲染（超采样）再缩放显示 → 细线锐利、抗锯齿细腻
     const ss = 2.0;
-    final rec = ui.PictureRecorder();
-    final off = Canvas(rec)..scale(ss);
-    tmallGenieLuaFigure(off, pal, lift, time);
-    final img = rec.endRecording().toImageSync((W * ss).round(), (H * ss).round());
+    final key = '${lift.toStringAsFixed(4)}:${time.toStringAsFixed(4)}:${pal == Palette.dark}';
+    if (key != _cacheKey || _cacheImg == null) {
+      final rec = ui.PictureRecorder();
+      final off = Canvas(rec)..scale(ss);
+      tmallGenieLuaFigure(off, pal, lift, time);
+      final img = rec.endRecording().toImageSync((W * ss).round(), (H * ss).round());
+      _cacheImg?.dispose();
+      _cacheImg = img;
+      _cacheKey = key;
+    }
     canvas.drawImageRect(
-      img,
+      _cacheImg!,
       Rect.fromLTWH(0, 0, W * ss, H * ss),
       dst,
       Paint()
         ..filterQuality = FilterQuality.medium
         ..isAntiAlias = true,
     );
-    img.dispose();
   }
 
   @override
