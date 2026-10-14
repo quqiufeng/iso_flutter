@@ -163,7 +163,7 @@ bin/iso.sh anim   <图名> [--frames 120] [--motion] [--ss 2] [--out DIR]
 - **Lua**：`app/lib/lua/figures/` 加 `xxx.lua`（`return function(lift,time) → 绘制指令 JSON`），在 `_figures` 注册 `'xxx'`。
 - **Dart**：`main.dart` 写 `xxxFigure(canvas, palette, lift, time)`，注册 `'xxx'`。
 - 然后 `cd app && flutter build linux --release`；`bin/iso.sh render xxx` 出图。
-- 设计规范见 `docs/references/`（`craft`/`kit`/`motion`/`verify`/…）。
+- **写图前先读 [`AGENTS.md`](AGENTS.md)**（把 `docs/references/{craft,kit,motion,verify}.md` 定为必读规范）。
 
 ---
 
