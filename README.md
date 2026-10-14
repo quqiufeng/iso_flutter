@@ -5,6 +5,16 @@
 把 anatomy（等距插画）的引擎**全量移植为 Dart 与 Lua 两份等价实现**，在 **Flutter** 里渲染：
 既能**交互**（拖拽开盖、实时特效），也能**离屏出图/出动画**（PNG/GIF/MP4，可发微信）。
 
+## 展示：同一张图，Lua 与 Dart 两种实现
+
+| **Lua 生成** | **Dart 生成** |
+|:---:|:---:|
+| ![Lua 生成](example/res/lua/tmall-genie.gif) | ![Dart 生成](example/res/dart/tmall-genie-dart.gif) |
+| `bin/iso.sh anim tmall-genie --motion` | `bin/iso.sh anim tmall-genie-dart --motion` |
+
+> 天猫精灵 X1：等距图 + "唤醒→开盖→合上"动画。两版**逐像素一致**。
+> 源文件：`example/tmall-genie/{tmall_genie.lua, tmall_genie.dart}`；产物：`example/res/{lua,dart}/`。
+
 ---
 
 ## 目录结构
