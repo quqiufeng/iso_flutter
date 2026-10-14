@@ -260,9 +260,7 @@ local COMBO = { n = 0, t = 0 }
 local ULT_FX = nil
 local FLASH_T, SHAKE, HITSTOP = 0, 0, 0
 local ULT_DUR, WHIRL_DUR = 1.1, 0.75
-local lastBase = { left = 100, right = 100 }
-local lastWave = 0
-local seen = setmetatable({}, { __mode = "k" })
+-- 命中 / 死亡 / 波次 / 基地受击：改为**消费 Sim 事件流** game.events（arena.lua emit）
 local SFX = {}
 
 local function makeSfx(freq, dur, decay, kind)
@@ -306,36 +304,30 @@ local function stepJuice(d)
   FLASH_T = math.max(0, FLASH_T - d)
   if BANNER then BANNER.t = BANNER.t + d; if BANNER.t > BANNER.life then BANNER = nil end end
   COMBO.t = math.max(0, COMBO.t - d); if COMBO.t <= 0 then COMBO.n = 0 end
-  for _, u in ipairs(game.units) do
-    local prev = seen[u]
-    if prev and u.hp < prev.hp - 0.01 then
-      u._flash = 0.16
-      local x, y = sx(u.x, u.lane)
-      POPS[#POPS + 1] = { x = x, y = y - 2.0 * cam.s, val = math.max(1, math.floor(prev.hp - u.hp + 0.5)), t = 0 }
-      spawnParts(x, y - 1.2 * cam.s, 3, u.side)
+  -- 消费 Sim 事件流（arena.lua emit 的 hit / death / wave / base）
+  for _, ev in ipairs(game.events) do
+    if ev.type == "hit" and ev.target then
+      local t = ev.target
+      t._flash = 0.16
+      local x, y = sx(t.x, t.lane)
+      POPS[#POPS + 1] = { x = x, y = y - 2.0 * cam.s, val = math.max(1, math.floor(ev.amt + 0.5)), t = 0 }
+      spawnParts(x, y - 1.2 * cam.s, 3, t.side)
       play(SFX.hit)
-    end
-  end
-  for u, p in pairs(seen) do
-    local alive = false
-    for _, v in ipairs(game.units) do if v == u then alive = true; break end end
-    if not alive then
-      local x, y = sx(p.x, p.lane)
+    elseif ev.type == "death" and ev.unit then
+      local u = ev.unit
+      local x, y = sx(u.x, u.lane)
       spawnParts(x, y - 1.2 * cam.s, 12, u.side)
       play(SFX.death)
       if u.side == "right" then
         COMBO.n = COMBO.n + 1; COMBO.t = 2.0; COMBO.x = x; COMBO.y = y
         HITSTOP = math.max(HITSTOP, 0.07)
       end
+    elseif ev.type == "wave" then
+      BANNER = { text = "第 " .. ev.n .. " 波", t = 0, life = 1.2 }; play(SFX.wave)
+    elseif ev.type == "base" then
+      SHAKE = math.max(SHAKE, 8); FLASH_T = math.max(FLASH_T, 0.18)
     end
   end
-  for k in pairs(seen) do seen[k] = nil end
-  for _, u in ipairs(game.units) do seen[u] = { x = u.x, lane = u.lane, hp = u.hp } end
-  for _, side in ipairs({ "left", "right" }) do
-    if game.bases[side].hp < lastBase[side] - 0.01 then SHAKE = math.max(SHAKE, 8); FLASH_T = math.max(FLASH_T, 0.18) end
-    lastBase[side] = game.bases[side].hp
-  end
-  if game.wave ~= lastWave then lastWave = game.wave; BANNER = { text = "第 " .. game.wave .. " 波", t = 0, life = 1.2 }; play(SFX.wave) end
   for i = #PARTS, 1, -1 do local p = PARTS[i]; p.t = p.t + d; p.x = p.x + p.vx * d; p.vy = p.vy + 320 * d; p.y = p.y + p.vy * d; if p.t > p.life then table.remove(PARTS, i) end end
   for i = #POPS, 1, -1 do local p = POPS[i]; p.t = p.t + d; if p.t > 0.9 then table.remove(POPS, i) end end
 end
