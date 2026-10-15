@@ -1,6 +1,6 @@
 import warnings; warnings.filterwarnings("ignore")
 import os, glob, torch
-from PIL import Image
+from PIL import Image, ImageOps
 from diffusers import AnimateDiffControlNetPipeline, MotionAdapter, ControlNetModel, DDIMScheduler
 from diffusers.utils import export_to_gif
 
@@ -69,6 +69,11 @@ frames = pipe(
     guidance_scale=CFG, num_inference_steps=STEPS,
     generator=torch.Generator("cpu").manual_seed(SEED),
 ).frames[0]
+
+# 模型侧视恒朝左（先验），无法用 prompt/骨架/CN权重改变；
+# 需要「朝右走」时在脚本内逐帧水平镜像（LEFT<<->>RIGHT）。
+if os.environ.get("FLIP", "0") == "1":
+    frames = [ImageOps.mirror(f) for f in frames]
 
 export_to_gif(frames, OUT, fps=int(os.environ.get("FPS", "8")))
 print("saved", OUT, "frames", len(frames))

@@ -117,6 +117,7 @@ OUT=$PWD/diffwalk_arm2_regen.gif /data/venv/bin/python dw_cn.py
 | `CNSCALE` | `0.55` | `1.0` | ControlNet 权重（越低越松、越像自由发挥） |
 | `IP` | `0` | `1` | 是否挂 IP-Adapter 参考图（arm2 **关**） |
 | `IPSCALE` | `0.7` | `0.7` | IP-Adapter 权重（`IP=1` 时生效） |
+| `FLIP` | `0`（朝左）；要朝右用 `1` | `0` | 脚本内逐帧水平镜像。`0`=朝左，`1`=朝右 |
 | `CFG` | `7.5` | `7.5` | 文本引导强度 |
 | `LORASCALE` | `1.0` | `1.0` | 走路 LoRA 权重 |
 | `FREEINIT` | `0` | `0` | 是否开 FreeInit |
@@ -137,10 +138,12 @@ OUT=$PWD/diffwalk_arm2_regen.gif /data/venv/bin/python dw_cn.py
 
 ## 7. 关键经验 / 注意事项
 
-1. **朝向不受骨架与 prompt 控制（此问题尚未解决）。** 骨架是「朝 +x（右）」，但
-   dreamshaper-8 侧视默认**朝左**先验极强，模型总把角色渲染成朝左；prompt 加
-   `facing right` 也压不住。把输出水平镜像（`-flop`）**不是解法**——镜像后观感像「倒着走」。
-   （可能方向：换对朝向中性的底模、或换/训一个左右向均衡的走路 LoRA；均**未验证**。）
+1. **朝向：模型恒朝左，靠脚本 `FLIP` 出朝右。** 骨架是「朝 +x（右）」，但
+   dreamshaper-8 侧视**朝左**先验极强——prompt 加 `facing right`、把骨架水平翻转、
+   把 `CNSCALE` 拉到 1.0，**都改不了朝向**（1.0 还会崩坏角色）。唯一生效的是
+   `dw_cn.py` 的 **`FLIP=1`**：脚本内逐帧水平镜像，直接输出朝右走。
+   `FLIP=0`（默认）朝左，`FLIP=1` 朝右。
+   > 镜像后是否「像倒着走」取决于源走路的步态相位，与镜像本身无必然关系。
 2. **步幅由骨架髋角决定**（`KEY` 里 `hipL/hipR`），与 prompt 无关。髋角越小步幅越小，但
    **骨架一变，模型画的角色外观（发长、裙长等）也会轻微漂移**，小步幅偶尔还会凭空多画一个球/瓶——
    可在 `NEG` 加 `ball, orb, sphere, flask, bottle, lantern, pouch` 抑制。
