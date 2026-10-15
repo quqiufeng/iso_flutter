@@ -53,12 +53,19 @@ if FREEINIT:
     pipe.enable_free_init(num_iters=FREE_ITERS, use_fast_sampling=True)
 pipe.enable_model_cpu_offload()
 
+# POSE_FLIP：把「输入骨架」水平翻转后再喂 ControlNet。
+# 模型侧视恒把角色渲染成朝左，但腿的迈步方向照抄骨架 → 不翻骨会得到「太空步」
+# （脸朝左、腿朝右迈）。翻转骨架使腿与脸同向 = 正常前走。（详见 WALK_ANIM.md）
+POSE_FLIP = os.environ.get("POSE_FLIP", "0") == "1"
 all_poses = sorted(glob.glob(os.path.join(POSES, "*.png")))
 n = len(all_poses)
 cond = []
 for i in range(FRAMES):
     idx = i * n // FRAMES
-    cond.append(Image.open(all_poses[idx]).convert("RGB").resize((W, H)))
+    im = Image.open(all_poses[idx]).convert("RGB").resize((W, H))
+    if POSE_FLIP:
+        im = ImageOps.mirror(im)
+    cond.append(im)
 
 ip_img = Image.open(REF).convert("RGB").resize((W, H)) if IP else None
 
@@ -69,11 +76,6 @@ frames = pipe(
     guidance_scale=CFG, num_inference_steps=STEPS,
     generator=torch.Generator("cpu").manual_seed(SEED),
 ).frames[0]
-
-# 模型侧视恒朝左（先验），无法用 prompt/骨架/CN权重改变；
-# 需要「朝右走」时在脚本内逐帧水平镜像（LEFT<<->>RIGHT）。
-if os.environ.get("FLIP", "0") == "1":
-    frames = [ImageOps.mirror(f) for f in frames]
 
 export_to_gif(frames, OUT, fps=int(os.environ.get("FPS", "8")))
 print("saved", OUT, "frames", len(frames))

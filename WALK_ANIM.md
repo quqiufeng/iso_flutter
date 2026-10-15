@@ -8,7 +8,12 @@
 - 姿势控制：`control_v11p_sd15_openpose`（逐帧骨架）
 - 走路动力学：`walkRL_diff.safetensors`（运动 LoRA）
 
-本目录的产物基线为 **`diffwalk_arm2_regen.gif`**：**512×512 × 16 帧** 的红披风白甲角色侧走。
+产物为 **512×512 × 16 帧** 的红披风白甲角色侧走（步态正确、朝左前走）：
+
+- `diffwalk_arm2_big.gif` —— 大步幅
+- `diffwalk_arm2_small.gif` —— 小步幅
+
+> 早期 `diffwalk_arm2_regen.gif` 是**太空步**（脸朝左、腿朝右迈），保留仅作对照，见第 7 节。
 
 ---
 
@@ -20,10 +25,13 @@
 ├── dw_cn.py                  # 主生成脚本（AnimateDiff + openpose ControlNet + 走路 LoRA）
 ├── walk_poses.py             # 生成 OpenPose 骨架帧序列（步幅由 KEY 里髋角控制）
 ├── dl_models.py              # 下载 diffusers 模型到 /data/models/image/diffusers/
-├── run_arm2.sh               # 固化 arm2 全部参数的复现脚本
-├── diffwalk_arm2_regen.gif   # 产物基线
+├── run_arm2.sh               # 一键复现脚本（含 POSE_FLIP=1）
+├── diffwalk_arm2_big.gif     # 产物：大步幅（步态正确）
+├── diffwalk_arm2_small.gif   # 产物：小步幅（步态正确）
+├── diffwalk_arm2_regen.gif   # 早期产物：太空步（仅对照）
 └── poses/
-    └── walk2/                # arm2 用的 16 张骨架帧 f00.png … f15.png
+    ├── walk2/                # 大步幅骨架（髋 ±36），16 张 f00.png … f15.png
+    └── walk_small/           # 小步幅骨架（髋 ±22），16 张
 ```
 
 ---
@@ -74,6 +82,8 @@ OUTDIR=$PWD/poses/walk2 /data/venv/bin/python walk_poses.py  # 指定输出目�
 - **已附带 arm2 用过的 16 帧**：`poses/walk2/f00.png … f15.png`，
   **直接用它就能复现下面的 GIF，无需重新生成骨架**。
 - 若改 `KEY` 里的髋角来调步幅，骨架形状会变，模型画出的角色外观也会**轻微漂移**（见第 7 节）。
+- ⚠️ 骨架是「朝 +x（右）」迈步，但模型渲染时会**把脸翻到朝左、腿仍照抄骨架方向** → 直接渲染会得到
+  **太空步**。因此生成时用 `POSE_FLIP=1`（见 5.3）把骨架水平翻转后再喂 ControlNet，才能得到正常前走。
 
 ---
 
@@ -81,7 +91,7 @@ OUTDIR=$PWD/poses/walk2 /data/venv/bin/python walk_poses.py  # 指定输出目�
 
 ### 5.1 一键复现 arm2
 
-`run_arm2.sh`：`POSES` 指向本目录的 `poses/walk2`，默认输出本目录的 `diffwalk_arm2_regen.gif`。
+`run_arm2.sh`：用 `poses/walk2`（大步幅骨架）+ `POSE_FLIP=1`，默认输出 `diffwalk_arm2_big.gif`。
 
 ```bash
 cd ~/iso_flutter
@@ -93,10 +103,10 @@ OUT=/tmp/out.gif ./run_arm2.sh   # 换输出路径
 
 ```bash
 cd ~/iso_flutter
-IP=0 POSES="$PWD/poses/walk2" W=512 H=768 FRAMES=16 STEPS=25 SEED=42 CNSCALE=0.55 \
+IP=0 POSE_FLIP=1 POSES="$PWD/poses/walk2" W=512 H=768 FRAMES=16 STEPS=25 SEED=42 CNSCALE=0.55 \
 PROMPT="a cute chibi cartoon knight, silver armor, red plume, short red cape, empty hands, walking to the right, side view, full body, arms swinging naturally in sync with the legs, plain white background, thick clean outline, flat colors, smooth 2d game character animation" \
 NEG="sword, weapon, shield, broom, brush, object in hand, back accessory, arms crossed, folded arms, hands on hips, stiff arms, blurry, low quality, deformed limbs, extra limbs, extra arms, static, gray background, scenery, background objects, realistic, photo, 3d render" \
-OUT=$PWD/diffwalk_arm2_regen.gif /data/venv/bin/python dw_cn.py
+OUT=$PWD/diffwalk_arm2_big.gif /data/venv/bin/python dw_cn.py
 ```
 
 ### 5.3 `dw_cn.py` 全部 env 参数
@@ -117,7 +127,7 @@ OUT=$PWD/diffwalk_arm2_regen.gif /data/venv/bin/python dw_cn.py
 | `CNSCALE` | `0.55` | `1.0` | ControlNet 权重（越低越松、越像自由发挥） |
 | `IP` | `0` | `1` | 是否挂 IP-Adapter 参考图（arm2 **关**） |
 | `IPSCALE` | `0.7` | `0.7` | IP-Adapter 权重（`IP=1` 时生效） |
-| `FLIP` | `0`（朝左）；要朝右用 `1` | `0` | 脚本内逐帧水平镜像。`0`=朝左，`1`=朝右 |
+| `POSE_FLIP` | `1` | `0` | **水平翻转输入骨架**再喂 ControlNet。`1`=步态正确（腿与脸同向），`0`=太空步（见第 7 节） |
 | `CFG` | `7.5` | `7.5` | 文本引导强度 |
 | `LORASCALE` | `1.0` | `1.0` | 走路 LoRA 权重 |
 | `FREEINIT` | `0` | `0` | 是否开 FreeInit |
@@ -131,19 +141,20 @@ OUT=$PWD/diffwalk_arm2_regen.gif /data/venv/bin/python dw_cn.py
 ## 6. 产出
 
 ```
-~/iso_flutter/diffwalk_arm2_regen.gif   (≈ 3.1 MB, 512×512×16)
+~/iso_flutter/diffwalk_arm2_big.gif     (大步幅, 512×512×16)
+~/iso_flutter/diffwalk_arm2_small.gif   (小步幅, 512×512×16)
 ```
 
 ---
 
 ## 7. 关键经验 / 注意事项
 
-1. **朝向：模型恒朝左，靠脚本 `FLIP` 出朝右。** 骨架是「朝 +x（右）」，但
-   dreamshaper-8 侧视**朝左**先验极强——prompt 加 `facing right`、把骨架水平翻转、
-   把 `CNSCALE` 拉到 1.0，**都改不了朝向**（1.0 还会崩坏角色）。唯一生效的是
-   `dw_cn.py` 的 **`FLIP=1`**：脚本内逐帧水平镜像，直接输出朝右走。
-   `FLIP=0`（默认）朝左，`FLIP=1` 朝右。
-   > 镜像后是否「像倒着走」取决于源走路的步态相位，与镜像本身无必然关系。
+1. **朝向：模型恒把角色渲染成朝左（改不了）。** prompt 加 `facing right`、把骨架左右翻转、
+   把 `CNSCALE` 拉到 1.0，**都改不了朝向**（1.0 还会崩坏角色）。
+   ⚠️ **关键：模型翻的是「脸」，翻不动「腿的迈步方向」**——骨架朝右迈（+x）时，渲染出来是
+   「脸朝左、腿朝右迈」= **太空步**（早期 `diffwalk_arm2_regen.gif` 就是）。
+   **正解 = `POSE_FLIP=1`：把「输入骨架」水平翻转**，让腿改朝左迈、与脸同向 → 正常朝左前走。
+   （把「输出」镜像没用——输出镜像后仍是太空步。）
 2. **步幅由骨架髋角决定**（`KEY` 里 `hipL/hipR`），与 prompt 无关。髋角越小步幅越小，但
    **骨架一变，模型画的角色外观（发长、裙长等）也会轻微漂移**，小步幅偶尔还会凭空多画一个球/瓶——
    可在 `NEG` 加 `ball, orb, sphere, flask, bottle, lantern, pouch` 抑制。
