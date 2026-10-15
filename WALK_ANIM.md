@@ -133,19 +133,6 @@ OUT=$PWD/diffwalk_arm2_regen.gif /data/venv/bin/python dw_cn.py
 ~/iso_flutter/diffwalk_arm2_regen.gif   (≈ 3.1 MB, 512×512×16)
 ```
 
-若需要「朝右 + 放慢」的后处理（PIL，勿用 `convert -delay`，对 gif 不生效）：
-
-```python
-from PIL import Image, ImageOps
-im = Image.open("dw_cn.gif"); fr = []
-try:
-    while True: fr.append(ImageOps.mirror(im.convert("RGB")).copy()); im.seek(im.tell()+1)
-except EOFError: pass
-fr = [f.convert("P", palette=Image.ADAPTIVE, colors=256) for f in fr]
-fr[0].save("out_right_slow.gif", save_all=True, append_images=fr[1:],
-           duration=150, loop=0, optimize=False)   # duration=ms/帧；150≈6.7fps
-```
-
 ---
 
 ## 7. 关键经验 / 注意事项
