@@ -26,8 +26,10 @@
 ├── walk_poses.py             # 生成 OpenPose 骨架帧序列（★步幅由 LEGX 控制）
 ├── dl_models.py              # 下载 diffusers 模型到 /data/models/image/diffusers/
 ├── run_arm2.sh               # 一键复现脚本（含 POSE_FLIP=1）
-├── diffwalk_arm2_big.gif     # 产物：大步幅（步态正确）
-├── diffwalk_arm2_small.gif   # 产物：小步幅（步态正确）
+├── mirror_gif.py             # 后处理：逐帧镜像一个 gif（换朝向，等同 FLIPOUT=1）
+├── diffwalk_arm2_big.gif     # 产物：大步幅（朝左，步态正确）
+├── diffwalk_arm2_small.gif   # 产物：小步幅（朝左，步态正确）
+├── diffwalk_arm2_small_right.gif  # 产物：小步幅（★朝右，FLIPOUT/镜像）
 ├── diffwalk_arm2_regen.gif   # 早期产物：太空步（仅对照）
 └── poses/
     ├── walk2/                # 大步幅骨架（髋 ±36，big 用），16 张 f00.png … f15.png
@@ -143,6 +145,7 @@ OUT=$PWD/diffwalk_arm2_big.gif /data/venv/bin/python dw_cn.py
 | `IP` | `0` | `1` | 是否挂 IP-Adapter 参考图（arm2 **关**） |
 | `IPSCALE` | `0.7` | `0.7` | IP-Adapter 权重（`IP=1` 时生效） |
 | `POSE_FLIP` | `1` | `0` | **水平翻转输入骨架**再喂 ControlNet。`1`=步态正确（腿与脸同向），`0`=太空步（见第 7 节） |
+| `FLIPOUT` | `0` | `0` | **水平镜像输出帧**。★换朝向用：模型恒朝左，`POSE_FLIP=1`+`FLIPOUT=1` = 正确的朝右走（见第 7 节） |
 | `CFG` | `7.5` | `7.5` | 文本引导强度 |
 | `LORASCALE` | `1.0` | `1.0` | 走路 LoRA 权重 |
 | `FREEINIT` | `0` | `0` | 是否开 FreeInit |
@@ -156,20 +159,40 @@ OUT=$PWD/diffwalk_arm2_big.gif /data/venv/bin/python dw_cn.py
 ## 6. 产出
 
 ```
-~/iso_flutter/diffwalk_arm2_big.gif     (大步幅, 512×512×16)
-~/iso_flutter/diffwalk_arm2_small.gif   (小步幅, 512×512×16)
+~/iso_flutter/diffwalk_arm2_big.gif          (大步幅, 朝左, 512×512×16)
+~/iso_flutter/diffwalk_arm2_small.gif        (小步幅, 朝左, 512×512×16)
+~/iso_flutter/diffwalk_arm2_small_right.gif  (小步幅, ★朝右, 512×512×16)
+```
+
+生成「朝右走」：
+
+```bash
+# 方式一：直接出（POSE_FLIP 修步态 + FLIPOUT 镜像朝向）
+cd ~/iso_flutter
+IP=0 POSE_FLIP=1 FLIPOUT=1 POSES="$PWD/poses/walk_smaller" W=512 H=512 FRAMES=16 STEPS=25 SEED=42 CNSCALE=0.55 \
+OUT=$PWD/diffwalk_arm2_small_right.gif /data/venv/bin/python dw_cn.py
+
+# 方式二：对已有的「正确朝左走」后处理镜像
+/data/venv/bin/python mirror_gif.py diffwalk_arm2_small.gif diffwalk_arm2_small_right.gif
 ```
 
 ---
 
 ## 7. 关键经验 / 注意事项
 
-1. **朝向：模型恒把角色渲染成朝左（改不了）。** prompt 加 `facing right`、把骨架左右翻转、
-   把 `CNSCALE` 拉到 1.0，**都改不了朝向**（1.0 还会崩坏角色）。
-   ⚠️ **关键：模型翻的是「脸」，翻不动「腿的迈步方向」**——骨架朝右迈（+x）时，渲染出来是
-   「脸朝左、腿朝右迈」= **太空步**（早期 `diffwalk_arm2_regen.gif` 就是）。
-   **正解 = `POSE_FLIP=1`：把「输入骨架」水平翻转**，让腿改朝左迈、与脸同向 → 正常朝左前走。
-   （把「输出」镜像没用——输出镜像后仍是太空步。）
+1. **朝向（★换朝向的方法）**
+   - **模型恒把角色渲染成朝左**，prompt 加 `facing right`、把骨架左右翻转、把 `CNSCALE` 拉到 1.0
+     **都改不了朝向**（1.0 还会崩坏角色）。
+   - ⚠️ **关键：模型翻的是「脸」，翻不动「腿的迈步方向」**——骨架朝右迈（+x）时，渲染出来是
+     「脸朝左、腿朝右迈」= **太空步**（早期 `diffwalk_arm2_regen.gif` 就是）。
+   - **步态正解 = `POSE_FLIP=1`**：把**输入骨架**水平翻转，让腿改朝左迈、与脸同向 → 得到
+     「正确的朝左走」。
+   - **换朝向正解 = `FLIPOUT=1`**：在「已经正确的朝左走」基础上，把**输出帧**水平镜像 →
+     脸朝右、腿也朝右迈 = **正确的朝右走**（产物 `diffwalk_arm2_small_right.gif`）。
+     ⚠️ 顺序很重要：**先把步态修对（`POSE_FLIP=1`）、再镜像输出**；直接镜像一个「太空步」只会
+     得到一个镜像的太空步。
+   - 结论：`朝左走 = POSE_FLIP=1`；`朝右走 = POSE_FLIP=1 + FLIPOUT=1`。
+     （亦可事后用 `mirror_gif.py 输入.gif 输出.gif` 逐帧镜像，效果等同 `FLIPOUT=1`。）
 2. ★ **步幅由骨架腿的横向压缩 `LEGX` 决定**（不是髋角、也不是 prompt）。`LEGX` 越小步幅越小。
    这是已确定的调法：`LEGX` 只压腿的横向摆幅、不动髋角，骨架形状基本不变，**角色漂移最小**。
    （对比：直接改 `KEY` 髋角会让骨架形状大变 → 角色外观明显漂移。）小步幅偶尔仍会

@@ -78,5 +78,11 @@ frames = pipe(
     generator=torch.Generator("cpu").manual_seed(SEED),
 ).frames[0]
 
+# FLIPOUT：把「输出帧」水平镜像。模型恒渲染成朝左（见 POSE_FLIP 注释）；
+# 若已用 POSE_FLIP=1 得到「正确的朝左走」，再 FLIPOUT=1 镜像输出 = 「正确的朝右走」。
+# （注意：对「太空步」镜像没用——太空步镜像后仍是太空步；必须先修好步态再镜像。）
+if os.environ.get("FLIPOUT", "0") == "1":
+    frames = [ImageOps.mirror(f) for f in frames]
+
 export_to_gif(frames, OUT, fps=int(os.environ.get("FPS", "8")))
 print("saved", OUT, "frames", len(frames))
