@@ -130,6 +130,7 @@ AI 可以在**自己的 LuaJIT 里**直接 `require` 并运行它（`step/act/st
 | **运行时 / 渲染** | **LÖVE（开源 Lua 2D 引擎）** `game/love/` | LuaJIT + SDL/OpenGL；`love.graphics` GPU 渲染。**集成进本项目**（当运行时用），不是"把我们的东西搬过去" |
 | **GUI 容器** | **Flutter**（`app/`） | **只做窗口/面板/工具**，**不再做游戏渲染**（按用户定） |
 | **角色关键帧** | **Google 图像（Nano Banana / Gemini）** | `bin/img_nano.sh`（经 **apimart.ai**）：以**同一张参考图**逐张出走路关键姿势 → **跨帧角色一致**（当前主力）|
+| **角色一致编辑（本地）** | **Qwen-Image 2.1（sd.cpp `sd-cli`）** | `bin/img_qwen.sh --ref`：**本地、离线、免费**的「参考图 → 同一角色」编辑/补帧。Nano 出关键图后，用它扩展新姿势或补中间帧 |
 | **动画 / GIF** | **SD1.5 + AnimateDiff 动画模型** | 本地 `sd-cli -M vid_gen --motion-module mm_sd15_v3`（`/opt/sd`）→ 由关键帧/首帧出 GIF / 视频帧 |
 | **抠图 / 对齐** | **BiRefNet** + ImageMagick | 抠透明背景 → 统一画布、**脚底基线对齐 + 水平居中** → 帧序列（`game/love/assets/nb/*.png`）|
 | **备选素材** | **CC0 paper-doll / 自建 Lua 骨骼** | `bin/char.sh`（分件组装，换武器/染色）、`iso_engine/lib/lua/rig.lua`（自建骨骼，零授权）|
@@ -153,12 +154,24 @@ AI 可以在**自己的 LuaJIT 里**直接 `require` 并运行它（`step/act/st
 LÖVE：角色按 walk 帧循环 → 在等距地图上沿兵线移动
 ```
 ```bash
-# 关键帧 —— ⚠️ 必须 --ref 同一张角色图，否则形象漂移、不可用（白花钱）
+# ① 关键帧 —— ⚠️ 必须 --ref 同一张角色图，否则形象漂移、不可用（白花钱）
 bin/img_nano.sh "同参考图的骑士…走路 KEYFRAME=CONTACT：左腿前…" --ref ref.png --size 3:4 --res 1K --out out
-# 图生 GIF（本地 AnimateDiff）
+
+# ② 本地一致编辑/补帧（Qwen-Image 2.1，sd.cpp）——以某张关键图为参考，出"同一角色"的新姿势
+bin/img_qwen.sh "同一只Q版骑士，<新姿势/新角度>，形象配色完全一致，纯白背景，全身" \
+  --ref out/w1.png --size 768x1024 --steps 12 --seed 5 --out out --prefix qk
+
+# ③ 图生 GIF（本地 AnimateDiff）
 sd-cli -M vid_gen -m sd15.safetensors --vae vae-ft-mse.safetensors \
   --motion-module mm_sd15_v3.safetensors -i frame.png --video-frames 16 --fps 8 -o out.avi
+
+# ④ 关键帧拼 GIF（最简：ping-pong 循环，无模型）
+ffmpeg -framerate 10 -i walk/f%02d.png -vf "split[a][b];[a]palettegen[p];[b][p]paletteuse" -loop 0 walk.gif
 ```
+
+> **混合链路（推荐）**：**Nano 出高质量关键图**（形象最佳）→ **本地 `img_qwen.sh --ref` 出同一角色的补帧/新动作**（离线免费、形象一致）→ 拼 GIF。
+> 实测：Q 版骑士「行走」4 帧 → ping-pong 6 帧 GIF，披风/红缨随动、跨帧一致。
+> 本地 Qwen-Image 2.1 权重：`/data/models/image/qwen-image-2.1-Q6_K.gguf` + `qwen_image_2.1_vae_bf16.safetensors` + `Qwen3VL-8B-Instruct-Q4_K_M.gguf` + `mmproj-Qwen3VL-8B-Instruct-F16.gguf`（编辑需 vision）。
 
 **技能 / 打斗特效制作（大招为例）**
 ```
@@ -218,6 +231,7 @@ Agent（my-agent）写 Lua(Sim + 场景/素材)
 | **矢量等距图**（场景/物件/角色/UI）| `bin/iso.sh`（+ `iso_engine`）| **代码生成**（Lua/Dart）；AI 可直接写 → 无需美术 |
 | **位图素材**（贴图/精灵/道具/图标）| `bin/img.sh` | 基于 `/opt/static_comfyui` 的 `backup.sh`（Z-Image Turbo）+ BiRefNet **抠图**；素材档尺寸预设 + 透明背景 + LoRA 风格 |
 | **角色关键帧**（AI 手绘卡通）| `bin/img_nano.sh` | **Nano Banana**（Google Gemini 图像，经 **apimart.ai**）：`--ref` 参考图一致性、`--size/--res/--n`；密钥 `~/.env: APIMART_API_KEY`；`bin/cutparts.sh` 切件 |
+| **角色一致编辑/补帧**（本地离线）| `bin/img_qwen.sh` | **Qwen-Image 2.1**（sd.cpp `sd-cli`）：`--ref` 参考图 → **同一角色**的新姿势/新帧；免费、可批量；`--bg transparent` 走 BiRefNet 抠图 |
 | **图生动画 / GIF** | `sd-cli -M vid_gen`（`/opt/sd`）| **SD1.5 + AnimateDiff** motion module（`mm_sd15_v3`）+ `vae-ft-mse`；`--video-frames/--fps` → avi/gif |
 | **语音/配音** | `bin/tts.sh` | sherpa-onnx + **Kokoro**（中/英多音色）→ wav/mp3；可指定 **CosyVoice3 克隆音色** |
 

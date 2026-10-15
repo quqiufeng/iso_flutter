@@ -50,6 +50,8 @@ Sim 只 `emit{type="hit|death|wave|base"}`（见 `arena.lua`），**渲染层不
 - **NB 关键帧（主力）**：`assets/nb/knight_{walk,idle,attack,whirl,ult}_*`，白底抠图、脚底对齐；
   走/站循环，`attack`/`whirl`/`ult` 不循环、按施法进度播放；受击闪红 + 弧光。
 - 关键帧生成**必须 `--ref` 同一张参考图**（否则跨帧形象漂移）；动态效果一律「关键帧 + 动画模型」，不手绑骨。详见 `../README.md`、`../../docs/ai-game-system.md` §8。
+- **新链路（本地补帧）**：`bin/img_nano.sh`（Nano Banana，出高质量关键图）→ **`bin/img_qwen.sh --ref <某关键帧>`**（本地 Qwen-Image 2.1，出**同一角色**的新姿势/补帧，离线免费）→ 拼 GIF。
+  例：4 帧走路 → ping-pong 6 帧 GIF（披风/红缨随动、跨帧一致）。
 
 ## 技能 / 特效
 - 数值 = Sim：`game:ultimate()`（全体敌方 AoE）/ `game:whirlwind()`（全体我方旋风斩）。

@@ -68,12 +68,18 @@ LÖVE：骑士按 walk 帧循环 → 沿兵线移动
 # 1) 关键帧（同一参考图保证一致性）
 bash bin/img_nano.sh "同参考图的骑士，走路 KEYFRAME=CONTACT：左腿前…" \
   --ref example/rig-knight/knight_half.png --size 3:4 --res 1K --out /tmp/walk --prefix w1
+# 1b) 本地补帧/新姿势（Qwen-Image 2.1，离线免费）——以某张关键图为参考，出"同一角色"
+bin/img_qwen.sh "同一只Q版骑士，走路接触帧：右腿前…，形象配色完全一致，纯白背景，全身" \
+  --ref /tmp/walk/w1.png --size 768x1024 --steps 12 --seed 5 --out /tmp/walk --prefix q1
 # 2) 抠图对齐（BiRefNet + ImageMagick）→ 存到 game/love/assets/nb/
 bash /opt/static_comfyui/cpp/sd/bgremove.sh w1.png nobg1.png transparent
-# 3) 图生动画（本地 AnimateDiff，可选）
+# 3) 拼 GIF（最简 ping-pong；无模型）
+ffmpeg -framerate 10 -i frames/f%02d.png -vf "split[a][b];[a]palettegen[p];[b][p]paletteuse" -loop 0 walk.gif
+# 3b) 或图生动画（本地 AnimateDiff，可选）
 sd-cli -M vid_gen -m sd15.safetensors --vae vae-ft-mse.safetensors \
   --motion-module mm_sd15_v3.safetensors -i frame.png --video-frames 16 --fps 8 -o out.avi
 ```
+- **混合链路（当前最佳）**：**Nano 出高质量关键图 → 本地 `img_qwen.sh --ref` 出同一角色的补帧/新动作 → 拼 GIF**（形象一致、离线免费）。实测 Q 版骑士「行走」4 帧 → ping-pong 6 帧 GIF。
 - LÖVE 里 `NBMAP`（`main.lua`）把兵种映射到角色（当前各兵种统一用 `knight`）；帧从 `assets/nb/<name>_<anim>_<i>.png` 加载，走路循环。
 - 关键帧尺寸偏大 → 缩放到 `~1.9*cam.s` 高绘制；图像开 **mipmap** 保持清晰。
 
