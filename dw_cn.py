@@ -73,6 +73,7 @@ frames = pipe(
     prompt=PROMPT, negative_prompt=NEG,
     num_frames=FRAMES, conditioning_frames=cond, controlnet_conditioning_scale=CNS,
     ip_adapter_image=ip_img,
+    height=H, width=W,
     guidance_scale=CFG, num_inference_steps=STEPS,
     generator=torch.Generator("cpu").manual_seed(SEED),
 ).frames[0]
