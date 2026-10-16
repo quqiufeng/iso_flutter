@@ -16,3 +16,5 @@ build/
 # 生成的素材/音频
 assets_gen/
 preview_*.png
+__pycache__/
+preview_*.png

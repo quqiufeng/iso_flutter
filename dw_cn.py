@@ -1,8 +1,18 @@
 import warnings; warnings.filterwarnings("ignore")
-import os, glob, torch
-from PIL import Image, ImageOps
+import os, glob, ctypes, torch
+import imgproc_py as P   # StaticPy 版图像处理（替代 PIL；帧也走 imgproc）
 from diffusers import AnimateDiffControlNetPipeline, MotionAdapter, ControlNetModel, DDIMScheduler
-from diffusers.utils import export_to_gif
+
+def read_resized(path, w, h):
+    """读图→缩放→ torch 张量 (C,H,W) float[0,1]（走 imgproc，无 PIL / 无 numpy）。"""
+    im = P.img_open(path.encode())
+    c = P.img_convert(im, b"RGB")
+    r = P.img_resize(c, w, h, b"bilinear")
+    raw = ctypes.string_at(P.img_frame_ptr(r, 0), w * h * 4)   # RGBA
+    t = (torch.frombuffer(bytearray(raw), dtype=torch.uint8)
+         .reshape(h, w, 4)[:, :, :3].permute(2, 0, 1).float() / 255.0)
+    P.img_free(im); P.img_free(c); P.img_free(r)
+    return t
 
 _D = "/data/models/image/diffusers"
 BASE = os.environ.get("BASE", f"{_D}/dreamshaper-8")
@@ -62,27 +72,33 @@ n = len(all_poses)
 cond = []
 for i in range(FRAMES):
     idx = i * n // FRAMES
-    im = Image.open(all_poses[idx]).convert("RGB").resize((W, H))
+    im = read_resized(all_poses[idx], W, H)
     if POSE_FLIP:
-        im = ImageOps.mirror(im)
+        im = torch.flip(im, dims=[2])   # 水平镜像（W 维）
     cond.append(im)
 
-ip_img = Image.open(REF).convert("RGB").resize((W, H)) if IP else None
+ip_img = read_resized(REF, W, H) if IP else None
 
-frames = pipe(
+res = pipe(
     prompt=PROMPT, negative_prompt=NEG,
     num_frames=FRAMES, conditioning_frames=cond, controlnet_conditioning_scale=CNS,
     ip_adapter_image=ip_img,
     height=H, width=W,
     guidance_scale=CFG, num_inference_steps=STEPS,
     generator=torch.Generator("cpu").manual_seed(SEED),
-).frames[0]
+    output_type="pt",     # 直接出 torch 张量（避免 PIL）
+)
+fr = res.frames
+if isinstance(fr, (list, tuple)):
+    fr = fr[0]
+while fr.dim() > 4:
+    fr = fr[0]
+fr = (fr.clamp(0, 1) * 255).to(torch.uint8)                       # (F,C,H,W)
+frames_bytes = [bytes(fr[i].permute(1, 2, 0).contiguous().view(-1).tolist())
+                for i in range(fr.shape[0])]
 
-# FLIPOUT：把「输出帧」水平镜像。模型恒渲染成朝左（见 POSE_FLIP 注释）；
-# 若已用 POSE_FLIP=1 得到「正确的朝左走」，再 FLIPOUT=1 镜像输出 = 「正确的朝右走」。
-# （注意：对「太空步」镜像没用——太空步镜像后仍是太空步；必须先修好步态再镜像。）
-if os.environ.get("FLIPOUT", "0") == "1":
-    frames = [ImageOps.mirror(f) for f in frames]
-
-export_to_gif(frames, OUT, fps=int(os.environ.get("FPS", "8")))
-print("saved", OUT, "frames", len(frames))
+# FLIPOUT：输出水平镜像（走 imgproc）。先 POSE_FLIP 修好步态，再 FLIPOUT 换朝向。
+P.build_gif_bytes(frames_bytes, W, H, OUT,
+                  duration_ms=int(1000 / int(os.environ.get("FPS", "8"))),
+                  flip=(os.environ.get("FLIPOUT", "0") == "1"))
+print("saved", OUT, "frames", len(frames_bytes))
