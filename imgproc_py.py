@@ -115,73 +115,11 @@ img_putalpha = _sig("img_putalpha", _p, [_p, _p])
 img_draw_text = _sig("img_draw_text", _ci, [_p, _ci, _ci, _cs, _p, _ci])
 
 
-# ---- numpy 便捷层（测试用；从 RGBA8 缓冲读回）----
-def to_np(handle):
-    import numpy as np
-    w, h = img_width(handle), img_height(handle)
-    ptr = img_frame_ptr(handle, 0)
-    buf = C.string_at(ptr, w * h * 4)
-    return np.frombuffer(buf, dtype=np.uint8).reshape(h, w, 4).copy()
-
-
-def from_np(arr):
-    import numpy as np
-    h, w = arr.shape[:2]
-    im = img_new(w, h)
-    if arr.shape[2] == 3:
-        rgba = np.dstack([arr, np.full((h, w, 1), 255, np.uint8)]).astype(np.uint8)
-    else:
-        rgba = arr.astype(np.uint8)
-    C.memmove(img_frame_ptr(im, 0), rgba.tobytes(), w * h * 4)
-    return im
-
-
-def open_np(path):
-    return to_np(img_open(path))
-
 img_thumbnail = _sig("img_thumbnail", _p, [_p, _ci, _ci])
 img_getpixel = _sig("img_getpixel", _ci, [_p, _ci, _ci])
 img_putpixel = _sig("img_putpixel", _ci, [_p, _ci, _ci, _ci])
 img_lut3d = _sig("img_lut3d", _p, [_p, _cs, _ci, _ci, _ci, _ci])
 img_warp = _sig("img_warp", _p, [_p, _ci, _ci, _cs, _cs])
-
-
-def im_read_rgb(path):
-    """读图为 numpy RGB (H,W,3) uint8（走 imgproc，无 PIL）。"""
-    import numpy as np
-    h = img_open(path.encode() if isinstance(path, str) else path)
-    if not h:
-        return None
-    c = img_convert(h, b"RGB")
-    a = to_np(c)[:, :, :3].copy()
-    img_free(c); img_free(h)
-    return a
-
-
-def build_gif(frames_rgb, out, duration_ms=120):
-    """frames_rgb: list of numpy (H,W,3) uint8 -> 写多帧 GIF（走 imgproc，无 PIL）。"""
-    import numpy as np
-    import ctypes as C
-    h, w = frames_rgb[0].shape[:2]
-    first = img_frombytes_("RGB", w, h, frames_rgb[0])
-    img_set_delay(first, 0, duration_ms)
-    cur = first
-    for f in frames_rgb[1:]:
-        nxt = img_frombytes_("RGB", w, h, f)
-        img_set_delay(nxt, 0, duration_ms)
-        merged = img_append_frame(cur, nxt)
-        img_free(cur); img_free(nxt)
-        cur = merged
-    rc = img_save(cur, out.encode() if isinstance(out, str) else out)
-    img_free(cur)
-    return rc
-
-
-def img_frombytes_(mode, w, hh, arr):
-    import ctypes as C
-    buf = C.create_string_buffer(arr.tobytes())
-    handle = img_frombytes(mode.encode(), w, hh, C.cast(buf, C.c_void_p), len(buf))
-    return handle
 
 
 def img_frombytes_bytes(mode, w, h, data):
