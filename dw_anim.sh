@@ -15,8 +15,8 @@ fi
 OUT="${OUT:-$HOME/iso_gen/dw_anim}"
 W="${W:-512}"; H="${H:-512}"; FRAMES="${FRAMES:-16}"; FPS="${FPS:-8}"
 STEPS="${STEPS:-25}"; CFG="${CFG:-7.5}"; SEED="${SEED:-42}"
-PROMPT="${PROMPT:-a cute chibi cartoon knight, silver armor, red plume, red cape, empty hands, walking to the right, side view, full body, arms swinging naturally, plain white background, thick clean outline, flat colors, smooth 2d game character animation}"
-NEG="${NEG:-sword, weapon, shield, object in hand, arms crossed, blurry, low quality, deformed limbs, extra limbs, static, gray background, scenery}"
+PROMPT="${PROMPT:-a cute chibi cartoon knight, silver armor, red plume, short red cape, empty hands, walking to the right, side view, full body, arms swinging naturally in sync with the legs, plain white background, thick clean outline, flat colors, smooth 2d game character animation}"
+NEG="${NEG:-sword, weapon, shield, broom, brush, object in hand, back accessory, arms crossed, folded arms, hands on hips, stiff arms, blurry, low quality, deformed limbs, extra limbs, extra arms, static, gray background, scenery, background objects, realistic, photo, 3d render}"
 
 # —— sd.cpp 后端资产 ——
 export MODEL="${MODEL:-/data/models/image/video/sd15.safetensors}"
