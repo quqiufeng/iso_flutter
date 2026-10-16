@@ -19,7 +19,7 @@ PROMPT="${PROMPT:-a cute chibi cartoon knight, silver armor, red plume, short re
 NEG="${NEG:-sword, weapon, shield, broom, brush, object in hand, back accessory, arms crossed, folded arms, hands on hips, stiff arms, blurry, low quality, deformed limbs, extra limbs, extra arms, static, gray background, scenery, background objects, realistic, photo, 3d render}"
 
 # —— sd.cpp 后端资产 ——
-export MODEL="${MODEL:-/data/models/image/video/sd15.safetensors}"
+export MODEL="${MODEL:-/data/models/image/video/toonyou_alpha3.safetensors}"
 export VAE="${VAE:-/data/models/image/video/vae-ft-mse.safetensors}"
 export MOTION="${MOTION:-/data/models/image/video/mm_v2_prefixed.safetensors}"
 export LORA="${LORA:-/data/models/image/video/walkRL_diff.safetensors}"
