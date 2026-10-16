@@ -1,5 +1,10 @@
 # walk_anim —— 2D 角色侧视走路循环生成
 
+> **现状**：图像处理走 **StaticPy `imgproc`**（`mirror_gif.py`/`walk_poses.py`，无 PIL）；
+> 生成走 **sd.cpp + comfycli**（`dw_anim.sh`/`run_arm2.sh`，无 diffusers/torch）。
+> 旧 `dw_anim.sh`（diffusers）**已移除**。
+
+
 用 **diffusers** 的 `AnimateDiffControlNetPipeline`，把一组 **OpenPose 骨架帧** 驱成
 一段 2D 游戏角色的**侧视走路循环 GIF**。
 
@@ -22,7 +27,7 @@
 ```
 ~/iso_flutter/
 ├── WALK_ANIM.md              # 本文档
-├── dw_cn.py                  # 主生成脚本（AnimateDiff + openpose ControlNet + 走路 LoRA）
+├── dw_anim.sh                  # 主生成脚本（AnimateDiff + openpose ControlNet + 走路 LoRA）
 ├── walk_poses.py             # 生成 OpenPose 骨架帧序列（★步幅由 LEGX 控制）
 ├── dl_models.py              # 下载 diffusers 模型到 /data/models/image/diffusers/
 ├── run_arm2.sh               # 一键复现脚本（含 POSE_FLIP=1）
@@ -60,7 +65,7 @@
 
 会下载到 `/data/models/image/diffusers/`：
 
-| 目录 | 对应 `dw_cn.py` 变量 |
+| 目录 | 对应 `dw_anim.sh` 变量 |
 |---|---|
 | `dreamshaper-8` | `BASE` |
 | `animatediff-motion-adapter-v1-5-2` | `MOTION` |
@@ -123,10 +128,10 @@ cd ~/iso_flutter
 IP=0 POSE_FLIP=1 POSES="$PWD/poses/walk2" W=512 H=768 FRAMES=16 STEPS=25 SEED=42 CNSCALE=0.55 \
 PROMPT="a cute chibi cartoon knight, silver armor, red plume, short red cape, empty hands, walking to the right, side view, full body, arms swinging naturally in sync with the legs, plain white background, thick clean outline, flat colors, smooth 2d game character animation" \
 NEG="sword, weapon, shield, broom, brush, object in hand, back accessory, arms crossed, folded arms, hands on hips, stiff arms, blurry, low quality, deformed limbs, extra limbs, extra arms, static, gray background, scenery, background objects, realistic, photo, 3d render" \
-OUT=$PWD/diffwalk_arm2_big.gif /data/venv/bin/python dw_cn.py
+OUT=$PWD/diffwalk_arm2_big.gif /data/venv/bin/python dw_anim.sh
 ```
 
-### 5.3 `dw_cn.py` 全部 env 参数
+### 5.3 `dw_anim.sh` 全部 env 参数
 
 | 变量 | arm2 值 | 默认 | 说明 |
 |---|---|---|---|
@@ -170,7 +175,7 @@ OUT=$PWD/diffwalk_arm2_big.gif /data/venv/bin/python dw_cn.py
 # 方式一：直接出（POSE_FLIP 修步态 + FLIPOUT 镜像朝向）
 cd ~/iso_flutter
 IP=0 POSE_FLIP=1 FLIPOUT=1 POSES="$PWD/poses/walk_smaller" W=512 H=512 FRAMES=16 STEPS=25 SEED=42 CNSCALE=0.55 \
-OUT=$PWD/diffwalk_arm2_small_right.gif /data/venv/bin/python dw_cn.py
+OUT=$PWD/diffwalk_arm2_small_right.gif /data/venv/bin/python dw_anim.sh
 
 # 方式二：对已有的「正确朝左走」后处理镜像
 /data/venv/bin/python mirror_gif.py diffwalk_arm2_small.gif diffwalk_arm2_small_right.gif
@@ -198,7 +203,7 @@ OUT=$PWD/diffwalk_arm2_small_right.gif /data/venv/bin/python dw_cn.py
    （对比：直接改 `KEY` 髋角会让骨架形状大变 → 角色外观明显漂移。）小步幅偶尔仍会
    凭空多画一个球/瓶——可在 `NEG` 加 `ball, orb, sphere, flask, bottle, lantern, pouch` 抑制。
 3. **换骨架必须重跑**，骨架是唯一的姿势来源；`SEED` 固定 42 才能复现同一张角色。
-4. **不要并发**两个 `dw_cn.py`（GPU OOM）。
+4. **不要并发**两个 `dw_anim.sh`（GPU OOM）。
 5. 复现判据：重跑结果与存档 `diffwalk_arm2.gif` **逐帧 RMSE = 0**。
 6. ★ **步幅/摆臂的调法（已确定）**：步幅用 `LEGX`（`1.0`→`0.5` 步幅明显变小，实测有效），
    摆臂用 `ARMX` 放大；两者都只动骨架、不动角色，是最省心的调法。
@@ -210,7 +215,7 @@ OUT=$PWD/diffwalk_arm2_small_right.gif /data/venv/bin/python dw_cn.py
 
 ## 8. 说明
 
-- 本目录（`~/iso_flutter/`）即为该走路动画管线，**自包含**：`dw_cn.py`、`run_arm2.sh`
+- 本目录（`~/iso_flutter/`）即为该走路动画管线，**自包含**：`dw_anim.sh`、`run_arm2.sh`
   内部路径都基于脚本自身目录（`__file__` / `$HERE`），不再依赖 `~/iso_gen`。
 - 另有一条**无 ControlNet** 的纯 AnimateDiff 链路（生成 `~/diffwalk.gif` 那版），
   与本次产物无关，未纳入本目录。
