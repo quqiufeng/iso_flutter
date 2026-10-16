@@ -11,6 +11,48 @@ CX = W // 2
 LEGX = float(os.environ.get("LEGX", "1.0"))
 ARMX = float(os.environ.get("ARMX", "1.0"))
 YUP = int(os.environ.get("YUP", "0"))
+HAND = int(os.environ.get("HAND", "1"))   # 是否画 OpenPose 手部 21 关键点（约束手的漂移）
+
+# OpenPose 手 21 关键点：局部坐标 (前向, 侧向)，单位=手长；沿前臂方向摆放
+HAND_OFF = [
+    (0.00, 0.00),                                                     # 0 腕
+    (0.16, -0.34), (0.34, -0.52), (0.52, -0.60), (0.68, -0.64),       # 1-4 拇指
+    (0.26, -0.20), (0.62, -0.26), (0.90, -0.26), (1.10, -0.24),       # 5-8 食指
+    (0.22,  0.00), (0.64,  0.00), (0.94,  0.00), (1.16,  0.00),       # 9-12 中指
+    (0.22,  0.20), (0.62,  0.26), (0.90,  0.28), (1.08,  0.28),       # 13-16 无名
+    (0.20,  0.40), (0.52,  0.50), (0.74,  0.56), (0.90,  0.60),       # 17-20 小指
+]
+HAND_EDGES = [
+    (0, 1), (1, 2), (2, 3), (3, 4),
+    (0, 5), (5, 6), (6, 7), (7, 8),
+    (0, 9), (9, 10), (10, 11), (11, 12),
+    (0, 13), (13, 14), (14, 15), (15, 16),
+    (0, 17), (17, 18), (18, 19), (19, 20),
+    (5, 9), (9, 13), (13, 17),                                        # 掌
+]
+# 每根手指颜色（用洋红系——身体调色板里没有，避免 ControlNet 把手误认成手臂）
+HAND_COLORS = [(255, 0, 255), (255, 0, 200), (230, 0, 255), (255, 60, 255), (200, 0, 230)]
+def _finger(i):
+    if i <= 4: return 0
+    if i <= 8: return 1
+    if i <= 12: return 2
+    if i <= 16: return 3
+    return 4
+
+def draw_hand(im, elbow, wrist, length=22.0):
+    ex, ey = elbow; wx, wy = wrist
+    dx, dy = wx - ex, wy - ey
+    L = math.hypot(dx, dy) or 1.0
+    ux, uy = dx / L, dy / L          # 前向（沿前臂）
+    px, py = -uy, ux                 # 侧向
+    pts = [(wx + ux * f * length + px * s * length, wy + uy * f * length + py * s * length)
+           for (f, s) in HAND_OFF]
+    for a, b in HAND_EDGES:
+        col = HAND_COLORS[_finger(b)]
+        x1, y1 = pts[a]; x2, y2 = pts[b]
+        P.img_draw_line(im, int(round(x1)), int(round(y1)), int(round(x2)), int(round(y2)), rgba(col), 2)
+    for (x, y) in pts:
+        P.img_draw_ellipse(im, int(x - 2), int(y - 2), int(x + 2), int(y + 2), 0, 0xFFFFFFFF)
 
 def deg(d): return math.radians(d)
 def rgba(c): return (c[0] << 24) | (c[1] << 16) | (c[2] << 8) | 0xFF
@@ -66,6 +108,9 @@ def draw_frame(a):
         pts += [legd["hip"], legd["knee"], legd["ankle"]]
     for p in pts:
         P.img_draw_ellipse(im, int(p[0] - 4), int(p[1] - 4), int(p[0] + 4), int(p[1] + 4), 0, 0xFFFFFFFF)
+    if HAND:
+        draw_hand(im, Rarm["elbow"], Rarm["wrist"])
+        draw_hand(im, Larm["elbow"], Larm["wrist"])
     return im
 
 def shift_up(im, dy):
