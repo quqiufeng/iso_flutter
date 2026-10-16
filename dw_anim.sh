@@ -22,11 +22,23 @@ NEG="${NEG:-sword, weapon, shield, broom, brush, object in hand, back accessory,
 export MODEL="${MODEL:-/data/models/image/video/toonyou_alpha3.safetensors}"
 export VAE="${VAE:-/data/models/image/video/vae-ft-mse.safetensors}"
 export MOTION="${MOTION:-/data/models/image/video/mm_v2_prefixed.safetensors}"
-export LORA="${LORA:-/data/models/image/video/walkRL_diff.safetensors}"
+# walkRL_conv = kohya(lora_down/up) 格式，sd.cpp 认(400/400)；walkRL_diff 是 diffusers 格式(0/320，不生效)
+export LORA="${LORA:-/data/models/image/video/walkRL_conv.safetensors}"
 export LORA_STRENGTH="${LORA_STRENGTH:-1.0}"
 export CONTROL_NET="${CONTROL_NET:-/data/models/image/controlnet/control_openpose-fp16.safetensors}"
-export CONTROL_DIR="$POSE_DIR"
 export CONTROL_STRENGTH="${CONTROL_STRENGTH:-1.0}"
+
+# POSE_FLIP=1：水平翻转输入骨架（修太空步/倒退——模型照抄骨架迈步方向，须与脸同向）
+if [ "${POSE_FLIP:-0}" = "1" ]; then
+  FLIPDIR="$(mktemp -d)"
+  for f in "$POSE_DIR"/f*.png; do
+    ffmpeg -y -loglevel error -i "$f" -vf hflip "$FLIPDIR/$(basename "$f")"
+  done
+  echo "[dw_anim] POSE_FLIP=1 骨架已翻转 → $FLIPDIR"
+  export CONTROL_DIR="$FLIPDIR"
+else
+  export CONTROL_DIR="$POSE_DIR"
+fi
 export NEG
 
 echo "[dw_anim] poses=$POSE_DIR  out=$OUT  ${W}x${H} x${FRAMES}@${FPS}  steps=$STEPS seed=$SEED"
