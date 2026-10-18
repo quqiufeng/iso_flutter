@@ -1,221 +1,142 @@
 # walk_anim —— 2D 角色侧视走路循环生成
 
-> **现状**：图像处理走 **StaticPy `imgproc`**（`mirror_gif.py`/`walk_poses.py`，无 PIL）；
-> 生成走 **sd.cpp + comfycli**（`dw_anim.sh`/`run_arm2.sh`，无 diffusers/torch）。
-> 旧 `dw_anim.sh`（diffusers）**已移除**。
+> **现状（sd.cpp 版）**：图像处理走 **StaticPy `imgproc`**（`walk_poses.py`/`mirror_gif.py`，无 PIL/numpy）；
+> 生成走 **sd.cpp + comfycli**（`/opt/static_comfyui`，`anim.sh` 入口），**无 diffusers/torch**。
+> 旧 diffusers 版 `dw_cn.py` **已删除**；`dw_anim.sh` 现为 **bash**（调 sd.cpp）。
 
-
-用 **diffusers** 的 `AnimateDiffControlNetPipeline`，把一组 **OpenPose 骨架帧** 驱成
-一段 2D 游戏角色的**侧视走路循环 GIF**。
-
-- 底模：`dreamshaper-8`（SD1.5）
-- 运动模块：`animatediff-motion-adapter-v1-5-2`（提供帧间时序一致性）
-- 姿势控制：`control_v11p_sd15_openpose`（逐帧骨架）
-- 走路动力学：`walkRL_diff.safetensors`（运动 LoRA）
-
-产物为 **512×512 × 16 帧** 的红披风白甲角色侧走（步态正确、朝左前走）：
-
-- `diffwalk_arm2_big.gif` —— 大步幅（骨架 `poses/walk2`，`LEGX=1.0`）
-- `diffwalk_arm2_small.gif` —— 小步幅（骨架 `poses/walk_smaller`，`LEGX=0.5`）
-
-> 早期 `diffwalk_arm2_regen.gif` 是**太空步**（脸朝左、腿朝右迈），保留仅作对照，见第 7 节。
+## 流水线
+```
+walk_poses.py (imgproc 画 OpenPose 骨架帧)
+    │  CONTROL_DIR=<骨架目录> POSE_FLIP=1
+    ▼
+dw_anim.sh  →  /opt/static_comfyui/anim.sh
+    │  sd.cpp：AnimateDiff 运动模块 + 逐帧 openpose ControlNet + 走路 LoRA
+    ▼
+~/iso_gen/<out>/anim.gif
+    │  mirror_gif.py（朝左的正确走 → 镜像成朝右）
+    ▼
+~/walk_{big,small}_{left,right}.gif      (512×512 × 16 帧)
+```
 
 ---
 
-## 1. 目录结构
-
+## 1. 目录
 ```
 ~/iso_flutter/
-├── WALK_ANIM.md              # 本文档
-├── dw_anim.sh                  # 主生成脚本（AnimateDiff + openpose ControlNet + 走路 LoRA）
-├── walk_poses.py             # 生成 OpenPose 骨架帧序列（★步幅由 LEGX 控制）
-├── dl_models.py              # 下载 diffusers 模型到 /data/models/image/diffusers/
-├── run_arm2.sh               # 一键复现脚本（含 POSE_FLIP=1）
-├── mirror_gif.py             # 后处理：逐帧镜像一个 gif（换朝向，等同 FLIPOUT=1）
-├── diffwalk_arm2_big.gif     # 产物：大步幅（朝左，步态正确）
-├── diffwalk_arm2_small.gif   # 产物：小步幅（朝左，步态正确）
-├── diffwalk_arm2_small_right.gif  # 产物：小步幅（★朝右，FLIPOUT/镜像）
-├── diffwalk_arm2_regen.gif   # 早期产物：太空步（仅对照）
-└── poses/
-    ├── walk2/                # 大步幅骨架（髋 ±36，big 用），16 张 f00.png … f15.png
-    ├── walk_smaller/         # 小步幅骨架（LEGX=0.5，small 用），16 张
-    ├── walk_arm/             # 实验：LEGX0.6 ARMX1.6 YUP80
-    └── walk_arm2/            # 实验：LEGX0.7 ARMX1.0 YUP80
+├── WALK_ANIM.md            # 本文档
+├── walk_poses.py           # 生成 OpenPose 骨架帧（env: LEGX/ARMX/YUP/HAND）
+├── dw_anim.sh              # 主生成脚本（bash → sd.cpp/comfycli）
+├── mirror_gif.py           # 逐帧镜像 gif（换朝向）
+├── poses/                  # 随附骨架（walk2 大步 / walk_smaller 小步 …）
+└── ~/walk_*.gif            # 产物（在 HOME，不在仓库）
 ```
 
 ---
 
-## 2. 环境要求
+## 2. 骨架 `walk_poses.py`
+侧视 OpenPose，16 帧循环（4 个关键姿态线性插值）。
 
-| 项 | 值 |
-|---|---|
-| Python | `/data/venv/bin/python` |
-| torch | `2.6.0+cu126` |
-| diffusers | `0.38.0` |
-| huggingface_hub | 需要（下载模型时） |
-| GPU | NVIDIA（约需 16GB+ 显存；**两个实例并发会 OOM，须串行**） |
-
----
-
-## 3. 下载模型（一次性，约 7GB）
+| env | 默认 | 说明 |
+|---|---|---|
+| `OUTDIR` | `<脚本目录>/walk6` | 输出目录（`f00.png … f15.png`） |
+| `LEGX` | `1.0` | **步幅**（腿横向压缩）。`1.0` 大步、`0.5` 小步。★调步幅用它，别改 KEY 髋角 |
+| `ARMX` | `1.0` | 手臂横向摆幅放大 |
+| `YUP` | `0` | 整体上移像素（底部留白，防脚贴边） |
+| `HAND` | `1` | **是否画 OpenPose 手部 21 关键点/手**（洋红色，沿前臂摆动） |
 
 ```bash
-/data/venv/bin/python dl_models.py
+OUTDIR=$HOME/iso_gen/pose_big   HAND=1 LEGX=1.0 python3 walk_poses.py   # 大步
+OUTDIR=$HOME/iso_gen/pose_small HAND=1 LEGX=0.5 python3 walk_poses.py   # 小步
 ```
-
-会下载到 `/data/models/image/diffusers/`：
-
-| 目录 | 对应 `dw_anim.sh` 变量 |
-|---|---|
-| `dreamshaper-8` | `BASE` |
-| `animatediff-motion-adapter-v1-5-2` | `MOTION` |
-| `control_v11p_sd15_openpose` | `CN` |
-| `IP-Adapter` | `IPADAPTER`（本流程 `IP=0`，**用不到**） |
-
-另外**走路 LoRA 不在脚本里下载**，需自备：
-`/data/models/image/video/walkRL_diff.safetensors`（对应 `LORA`）。
+> `walk_poses.py` 的 `KEY` 髋角固定 **±22**；步幅只靠 `LEGX`（骨架形状尽量不变、角色漂移最小）。
 
 ---
 
-## 4. 生成 OpenPose 骨架帧
-
-骨架 = 16 帧循环（4 个关键姿态线性插值），侧视、COCO-18 配色，脚本 `walk_poses.py`。
-
+## 3. 生成 `dw_anim.sh`
 ```bash
-/data/venv/bin/python walk_poses.py                          # 输出到脚本内默认 OUTDIR
-OUTDIR=$PWD/poses/walk2 /data/venv/bin/python walk_poses.py  # 指定输出目录
-
-# 小步幅 + 底部留白（★已确定：改步幅用 LEGX，别动 KEY 髋角）：
-OUTDIR=$PWD/poses/walk_smaller LEGX=0.5 ARMX=1.0 YUP=80 /data/venv/bin/python walk_poses.py
+# 小步、朝左（POSE_FLIP 修步态；随后用 mirror_gif 出朝右）
+cd ~/iso_flutter
+POSE_DIR=$HOME/iso_gen/pose_small POSE_FLIP=1 CONTROL_STRENGTH=0.55 \
+OUT=$HOME/iso_gen/g_small W=512 H=512 FRAMES=16 STEPS=25 SEED=42 ./dw_anim.sh
+cp ~/iso_gen/g_small/anim.gif ~/walk_small_left.gif
+python3 mirror_gif.py ~/walk_small_left.gif ~/walk_small_right.gif
 ```
+> `OUT` 是**输出目录**（自动在其下写 `anim.gif` + 逐帧 `frame_*.png`）。
 
-`walk_poses.py` 可调 env：
-
+### `dw_anim.sh` 环境变量
 | 变量 | 默认 | 说明 |
 |---|---|---|
-| `OUTDIR` | `<脚本目录>/walk6` | 输出目录（16 张 `f00.png … f15.png`） |
-| `LEGX` | `1.0` | **腿部横向压缩 = 步幅**（★已确定的方法）。`1.0` = 原始大步，`0.5` = 明显小步 |
-| `ARMX` | `1.0` | **手臂横向摆幅放大**。`1.6` ≈ 摆臂更明显 |
-| `YUP` | `0` | **整体上移像素**，给画面**底部留白**（如 `80`；否则脚会贴底边） |
+| `MODEL` | `/data/models/image/video/toonyou_alpha3.safetensors` | 底模（ToonYou，2D 动画向） |
+| `VAE` | `vae-ft-mse.safetensors` | |
+| `MOTION` | `mm_v2_prefixed.safetensors` | AnimateDiff 运动模块 |
+| `LORA` | `walkRL_conv.safetensors` | 走路 LoRA（★必须是 sd.cpp 认的格式，见 §5） |
+| `LORA_STRENGTH` | `1.0` | |
+| `CONTROL_NET` | `control_openpose-fp16.safetensors` | openpose ControlNet |
+| `CONTROL_DIR` | `$POSE_DIR` | 逐帧骨架目录 |
+| `CONTROL_STRENGTH` | `1.0`（arm2 配方用 `0.55`） | ControlNet 权重 |
+| `POSE_FLIP` | `0`（★正确步态用 `1`） | 水平翻转**输入骨架** |
+| `PROMPT` / `NEG` | arm2 原版 | 提示词 |
+| `W` `H` | `512` `512` | 输出尺寸 |
+| `FRAMES` `FPS` | `16` `8` | |
+| `STEPS` `CFG` `SEED` | `25` `7.5` `42` | |
+| `DTYPE` | （空=fp16） | 直传 `anim.sh`：加载期量化 `q8_0`/`q4_0`（省显存，本机略慢） |
 
-- ★ **调步幅 = 调 `LEGX`**（已确定）：`LEGX` 只把腿的横向摆幅整体压缩/放大，**不动 `KEY` 里的髋角**，
-  所以骨架形状尽量不变、角色外观漂移最小。`walk_poses.py` 的 `KEY` 髋角固定 **±22**。
-- **已附带用过的 16 帧**：`poses/walk2`（髋 ±36 大步）、`poses/walk_smaller`（`LEGX=0.5` 小步）等，
-  **直接用它就能复现下面的 GIF，无需重新生成骨架**。
-- 若直接改 `KEY` 里的髋角来调步幅，骨架形状会变，模型画出的角色外观也会**漂移**（见第 7 节）——
-  这正是**改用 `LEGX` 调步幅**的原因。
-- ⚠️ 骨架是「朝 +x（右）」迈步，但模型渲染时会**把脸翻到朝左、腿仍照抄骨架方向** → 直接渲染会得到
-  **太空步**。因此生成时用 `POSE_FLIP=1`（见 5.3）把骨架水平翻转后再喂 ControlNet，才能得到正常前走。
+`anim.sh` 还支持 `NODE_SET`、`GEN`（先跑 walk_poses）等，详见其头部注释。
 
 ---
 
-## 5. 生成 GIF（主流程）
+## 4. 朝向 / 步态（★核心经验）
+- **太空步根因**：模型把角色的**脸**恒渲染成一个方向，但**照抄骨架的迈步方向**。骨架朝右迈 + 脸朝左 ⇒ 倒退（moonwalk）。
+- **正解 = `POSE_FLIP=1`**：把**输入骨架**水平翻转，让"腿的迈步方向"与"脸"同向 ⇒ 正确前走。
+- **本机实测（sd.cpp + ToonYou）**：`POSE_FLIP=1` 时角色**朝右**正常走；因此
+  - **朝左** = 对 `POSE_FLIP=1` 的输出用 `mirror_gif.py` 镜像；
+  - **朝右** = `POSE_FLIP=1` 原始输出。
+  （旧 diffusers 文档里"POSE_FLIP=1 即朝左"的结论**不适用于新管线**，以实测为准。）
+- 顺序：**先修步态（POSE_FLIP），再镜像朝向**；直接镜像一个太空步只会得到镜像的太空步。
 
-### 5.1 一键复现 arm2
+---
 
-`run_arm2.sh`：用 `poses/walk2`（大步幅骨架）+ `POSE_FLIP=1`，默认输出 `diffwalk_arm2_big.gif`。
+## 5. 走路 LoRA 的格式（★）
+sd.cpp **只认 kohya 格式**（`lora_down.weight`/`lora_up.weight`）：
 
+| 文件 | 格式 | sd.cpp 生效 |
+|---|---|---|
+| `walkRL_conv.safetensors` | kohya `lora_down/up` | **400/400 ✓** |
+| `walkRL_ab.safetensors` | kohya `lora_A/B` | 400/400 ✓ |
+| `walkRL_unet.safetensors` | 400/400 ✓ | |
+| `walkRL_diff.safetensors` | diffusers `_lora.down/up` | **0/320 ✗（不生效）** |
+
+日志确认：`(400 / 400) LoRA tensors have been applied`。挂上后斗篷飘动、走路动力学才正常。
+
+---
+
+## 6. 手部（HAND）
+- 骨架默认 `HAND=1`：每只手画 **OpenPose 21 关键点**（洋红色，沿前臂方向），让 ControlNet 也约束手。
+- 效果：手的**重影/漂移**明显减少。
+- 局限：我们的 `control_openpose` 是**身体版**训练，喂手部关键点属"超纲"——位置能大致控住，但**手的形状/手臂姿态会被带偏**（易糊成红色"连指手套/球"）。仍在调（改形状/改提示词/FreeInit/换底模等）。
+
+---
+
+## 7. 一键复现 4 张
 ```bash
 cd ~/iso_flutter
-./run_arm2.sh                    # 直接跑
-OUT=/tmp/out.gif ./run_arm2.sh   # 换输出路径
-```
-
-### 5.2 手动等价命令
-
-```bash
-cd ~/iso_flutter
-IP=0 POSE_FLIP=1 POSES="$PWD/poses/walk2" W=512 H=768 FRAMES=16 STEPS=25 SEED=42 CNSCALE=0.55 \
-PROMPT="a cute chibi cartoon knight, silver armor, red plume, short red cape, empty hands, walking to the right, side view, full body, arms swinging naturally in sync with the legs, plain white background, thick clean outline, flat colors, smooth 2d game character animation" \
-NEG="sword, weapon, shield, broom, brush, object in hand, back accessory, arms crossed, folded arms, hands on hips, stiff arms, blurry, low quality, deformed limbs, extra limbs, extra arms, static, gray background, scenery, background objects, realistic, photo, 3d render" \
-OUT=$PWD/diffwalk_arm2_big.gif /data/venv/bin/python dw_anim.sh
-```
-
-### 5.3 `dw_anim.sh` 全部 env 参数
-
-| 变量 | arm2 值 | 默认 | 说明 |
-|---|---|---|---|
-| `BASE` | —(用默认) | `/data/models/image/diffusers/dreamshaper-8` | 底模 |
-| `MOTION` | — | `.../animatediff-motion-adapter-v1-5-2` | 运动模块 |
-| `CN` | — | `.../control_v11p_sd15_openpose` | ControlNet |
-| `LORA` | — | `/data/models/image/video/walkRL_diff.safetensors` | 走路运动 LoRA |
-| `POSES` | `./poses/walk2` | `<脚本目录>/poses/walk2` | 骨架帧目录（按文件名排序取 16 张） |
-| `OUT` | `./diffwalk_arm2_regen.gif` | `<脚本目录>/diffwalk_arm2_regen.gif` | 输出 gif |
-| `REF` | —（IP=0 不用） | `<脚本目录>/ref.png` | IP-Adapter 参考图（仅 `IP=1` 时用） |
-| `FRAMES` | `16` | `16` | 帧数 |
-| `W` `H` | `512` `768` | `512` `768` | **输出尺寸**（同时用于喂 ControlNet 的骨架帧）。改大小/加留白务必同步改骨架的 `YUP` |
-| `STEPS` | `25` | `25` | 采样步数 |
-| `SEED` | `42` | `42` | 随机种子（**换 seed 角色会变**） |
-| `CNSCALE` | `0.55` | `1.0` | ControlNet 权重（越低越松、越像自由发挥） |
-| `IP` | `0` | `1` | 是否挂 IP-Adapter 参考图（arm2 **关**） |
-| `IPSCALE` | `0.7` | `0.7` | IP-Adapter 权重（`IP=1` 时生效） |
-| `POSE_FLIP` | `1` | `0` | **水平翻转输入骨架**再喂 ControlNet。`1`=步态正确（腿与脸同向），`0`=太空步（见第 7 节） |
-| `FLIPOUT` | `0` | `0` | **水平镜像输出帧**。★换朝向用：模型恒朝左，`POSE_FLIP=1`+`FLIPOUT=1` = 正确的朝右走（见第 7 节） |
-| `CFG` | `7.5` | `7.5` | 文本引导强度 |
-| `LORASCALE` | `1.0` | `1.0` | 走路 LoRA 权重 |
-| `FREEINIT` | `0` | `0` | 是否开 FreeInit |
-| `FREE_ITERS` | `3` | `3` | FreeInit 轮数（开启时） |
-| `FPS` | — | `8` | 导出 gif 的 fps（不影响帧内容） |
-
-> 管线内部：`DDIMScheduler`（`beta_schedule=linear, clip_sample=False, timestep_spacing=linspace, steps_offset=1`）、`enable_model_cpu_offload()`。
-
----
-
-## 6. 产出
-
-```
-~/iso_flutter/diffwalk_arm2_big.gif          (大步幅, 朝左, 512×512×16)
-~/iso_flutter/diffwalk_arm2_small.gif        (小步幅, 朝左, 512×512×16)
-~/iso_flutter/diffwalk_arm2_small_right.gif  (小步幅, ★朝右, 512×512×16)
-```
-
-生成「朝右走」：
-
-```bash
-# 方式一：直接出（POSE_FLIP 修步态 + FLIPOUT 镜像朝向）
-cd ~/iso_flutter
-IP=0 POSE_FLIP=1 FLIPOUT=1 POSES="$PWD/poses/walk_smaller" W=512 H=512 FRAMES=16 STEPS=25 SEED=42 CNSCALE=0.55 \
-OUT=$PWD/diffwalk_arm2_small_right.gif /data/venv/bin/python dw_anim.sh
-
-# 方式二：对已有的「正确朝左走」后处理镜像
-/data/venv/bin/python mirror_gif.py diffwalk_arm2_small.gif diffwalk_arm2_small_right.gif
+OUTDIR=$HOME/iso_gen/pb_hand HAND=1 LEGX=1.0 python3 walk_poses.py
+OUTDIR=$HOME/iso_gen/ps_hand HAND=1 LEGX=0.5 python3 walk_poses.py
+gen() { POSE_DIR="$1" POSE_FLIP=1 CONTROL_STRENGTH=0.55 OUT="$2" W=512 H=512 FRAMES=16 STEPS=25 SEED=42 ./dw_anim.sh; }
+gen $HOME/iso_gen/pb_hand $HOME/iso_gen/h_big
+gen $HOME/iso_gen/ps_hand $HOME/iso_gen/h_small
+cp ~/iso_gen/h_big/anim.gif   ~/walk_big_left.gif
+cp ~/iso_gen/h_small/anim.gif ~/walk_small_left.gif
+python3 mirror_gif.py ~/walk_big_left.gif   ~/walk_big_right.gif
+python3 mirror_gif.py ~/walk_small_left.gif ~/walk_small_right.gif
 ```
 
 ---
 
-## 7. 关键经验 / 注意事项
-
-1. **朝向（★换朝向的方法）**
-   - **模型恒把角色渲染成朝左**，prompt 加 `facing right`、把骨架左右翻转、把 `CNSCALE` 拉到 1.0
-     **都改不了朝向**（1.0 还会崩坏角色）。
-   - ⚠️ **关键：模型翻的是「脸」，翻不动「腿的迈步方向」**——骨架朝右迈（+x）时，渲染出来是
-     「脸朝左、腿朝右迈」= **太空步**（早期 `diffwalk_arm2_regen.gif` 就是）。
-   - **步态正解 = `POSE_FLIP=1`**：把**输入骨架**水平翻转，让腿改朝左迈、与脸同向 → 得到
-     「正确的朝左走」。
-   - **换朝向正解 = `FLIPOUT=1`**：在「已经正确的朝左走」基础上，把**输出帧**水平镜像 →
-     脸朝右、腿也朝右迈 = **正确的朝右走**（产物 `diffwalk_arm2_small_right.gif`）。
-     ⚠️ 顺序很重要：**先把步态修对（`POSE_FLIP=1`）、再镜像输出**；直接镜像一个「太空步」只会
-     得到一个镜像的太空步。
-   - 结论：`朝左走 = POSE_FLIP=1`；`朝右走 = POSE_FLIP=1 + FLIPOUT=1`。
-     （亦可事后用 `mirror_gif.py 输入.gif 输出.gif` 逐帧镜像，效果等同 `FLIPOUT=1`。）
-2. ★ **步幅由骨架腿的横向压缩 `LEGX` 决定**（不是髋角、也不是 prompt）。`LEGX` 越小步幅越小。
-   这是已确定的调法：`LEGX` 只压腿的横向摆幅、不动髋角，骨架形状基本不变，**角色漂移最小**。
-   （对比：直接改 `KEY` 髋角会让骨架形状大变 → 角色外观明显漂移。）小步幅偶尔仍会
-   凭空多画一个球/瓶——可在 `NEG` 加 `ball, orb, sphere, flask, bottle, lantern, pouch` 抑制。
-3. **换骨架必须重跑**，骨架是唯一的姿势来源；`SEED` 固定 42 才能复现同一张角色。
-4. **不要并发**两个 `dw_anim.sh`（GPU OOM）。
-5. 复现判据：重跑结果与存档 `diffwalk_arm2.gif` **逐帧 RMSE = 0**。
-6. ★ **步幅/摆臂的调法（已确定）**：步幅用 `LEGX`（`1.0`→`0.5` 步幅明显变小，实测有效），
-   摆臂用 `ARMX` 放大；两者都只动骨架、不动角色，是最省心的调法。
-   可再配 prompt `small steps, short stride` / `distinct natural arm swing, in opposition to legs`。
-   ⚠️ 把 `CNSCALE` 拉到 0.8 会把角色带崩（变大白狐），仍用 0.55。
-7. **取景**：脚别贴底边 → 骨架用 `YUP` 整体上移（加底部留白）；输出尺寸用 `W×H`（如 `512×768`）。
-
----
-
-## 8. 说明
-
-- 本目录（`~/iso_flutter/`）即为该走路动画管线，**自包含**：`dw_anim.sh`、`run_arm2.sh`
-  内部路径都基于脚本自身目录（`__file__` / `$HERE`），不再依赖 `~/iso_gen`。
-- 另有一条**无 ControlNet** 的纯 AnimateDiff 链路（生成 `~/diffwalk.gif` 那版），
-  与本次产物无关，未纳入本目录。
+## 8. 注意事项
+1. **GPU**：单实例约 7–8 GB 显存；**不要并发**两个生成（会 OOM）。
+2. **量化**：`DTYPE=q8_0/q4_0` 只省显存；本机（3080 显存充足）**反而略慢**，文件不变小（gguf 对 SD1.5 的 3×3 卷积无法块量化）。
+3. **尺寸**：骨架帧为 512×768，生成 `W×H`（如 512×512）时会被缩放；改 `W/H` 注意取景。
+4. **换骨架必须重跑**；`SEED` 固定才复现同一角色。
+5. **提示词是"角色身份证"**：大改 prompt 会换角色；只想修细节时优先改 `NEG` / 参数，别动角色描述。
+6. 生成/中间文件统一放 `~/iso_gen/`（禁 `/tmp`）。
