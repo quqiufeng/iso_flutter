@@ -43,7 +43,7 @@ export PATH="$HOME/development/flutter/bin:$PATH"
 ## 4. 走路动画管线（walk_anim，sd.cpp）
 | # | 项目 | 命令/检查 | 预期 |
 |---|---|---|---|
-| A1 | 骨架 | `OUTDIR=... HAND=1 LEGX=1.0 python3 walk_poses.py` | 16 张 `f00..f15.png`，含手部 21 点 |
+| A1 | 骨架 | `OUTDIR=... HAND=1 LEGX=1.0 /opt/StaticPy/anim/pose_walk` | 16 张 `f00..f15.png`，含手部 21 点 |
 | A2 | LoRA 生效 | 生成日志含 `(400 / 400) LoRA tensors have been applied` | 用 `walkRL_conv`（**不是** `walkRL_diff`，后者 0/320） |
 | A3 | 生成 | `POSE_DIR=<骨架> POSE_FLIP=1 CONTROL_STRENGTH=0.55 OUT=... ./dw_anim.sh` | 出 16 帧 gif |
 | A4 | 方向 | 看 `anim.gif` 与镜像版 | 无太空步（腿与脸同向）；朝左=镜像 `POSE_FLIP=1` 输出 |

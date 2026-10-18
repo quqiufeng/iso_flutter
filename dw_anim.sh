@@ -1,15 +1,17 @@
 #!/bin/bash
-# dw_anim.sh —— 替代 dw_cn.py（diffusers）：走 sd.cpp + comfycli（StaticPy），零 torch/PIL/numpy。
-# 流程：walk_poses.py(imgproc 出骨架帧) → anim.sh(comfycli AnimateDiff + 逐帧 ControlNet + 运动 LoRA)
+# dw_anim.sh —— 走 sd.cpp + comfycli 出动画（零 torch/PIL/numpy）。
+# 流程：pose_walk(StaticPy 出骨架帧) → anim.sh(comfycli AnimateDiff + 逐帧 ControlNet + 运动 LoRA)
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 SDDIR="${SDDIR:-/opt/static_comfyui}"
+STATICPY="${STATICPY:-/opt/StaticPy}"
+export LD_LIBRARY_PATH="$STATICPY/cpp/imgproc/build:${LD_LIBRARY_PATH:-}"
 
-# 骨架帧目录（默认用随附的；设 GEN=1 则先跑 walk_poses.py 现生成）
+# 骨架帧目录（默认用随附的；设 GEN=1 则先用 StaticPy pose_walk 现生成）
 POSE_DIR="${POSE_DIR:-$DIR/poses/walk2}"
 if [ "${GEN:-0}" = "1" ]; then
   POSE_DIR="${OUT_POSE:-$HOME/iso_gen/poses}"
-  OUTDIR="$POSE_DIR" LEGX="${LEGX:-1.0}" ARMX="${ARMX:-1.0}" YUP="${YUP:-0}" python3 "$DIR/walk_poses.py"
+  OUTDIR="$POSE_DIR" LEGX="${LEGX:-1.0}" ARMX="${ARMX:-1.0}" YUP="${YUP:-0}" HAND="${HAND:-1}" "$STATICPY/anim/pose_walk"
 fi
 
 OUT="${OUT:-$HOME/iso_gen/dw_anim}"
