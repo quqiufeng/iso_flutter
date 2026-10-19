@@ -16,9 +16,13 @@
 
 一句话：**把“做游戏”变成“给方向 + 验收审美”。**
 
+### 起点
+
+最早只是做一张**天猫精灵等距图 / 开盖动画**的小需求。为了稳定出图，长出了 Dart/Lua 双引擎、离屏渲染和素材流水线；再往后，才是 AI 游戏开发系统。
+
 ## 10 秒 Demo
 
-| 新角色（Knight，16 帧） | 双引擎对拍（Lua） |
+| 新角色（Knight，16 帧） | 双引擎对拍（起点需求） |
 |:---:|:---:|
 | <img src="knight_big.gif" width="300" alt="knight walk"> | <img src="example/res/lua/tmall-genie.gif" width="300" alt="tmall genie"> |
 | `make_walk.sh` 一条命令 | Dart/Lua RMSE≈1e-5 |
@@ -82,7 +86,7 @@ love game/love
 
 ## 技术底座：Dart + Lua 双引擎
 
-同一张等距图有两份等价实现，输出逐像素一致：
+起点需求是天猫精灵等距图；同一张图有两份等价实现，输出逐像素一致：
 
 | Lua 生成 | Dart 生成 |
 |:---:|:---:|
