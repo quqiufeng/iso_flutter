@@ -1,38 +1,103 @@
 # iso_flutter
 
-> **native 等距解释图 / 动画引擎**：Dart + Lua 双引擎（等价），Flutter 离屏渲染出 PNG / GIF / MP4 —— **无浏览器、无 node、无 JS**。
+> **口述一个游戏，AI 自己开发、试玩、看画面、迭代。**
+> 人只给想法与意见；代码、素材、测试、调参由 AI 闭环执行。
 
-把 anatomy（等距插画）的引擎**全量移植为 Dart 与 Lua 两份等价实现**，在 **Flutter** 里渲染：
-既能**交互**（拖拽开盖、实时特效），也能**离屏出图/出动画**（PNG/GIF/MP4，可发微信）。
+目标不是“AI 辅助写代码”，而是让下一个游戏可以做到：
 
-## 展示：同一张图，Lua 与 Dart 两种实现
+> **我没有手写业务代码、没有手绘素材，只口述并验收了一个游戏。**
 
-| **Lua 生成** | **Dart 生成** |
+这套系统由四层组成：
+
+- **Sim**：纯 Lua，确定性、headless、可回放；
+- **Render**：Flutter / Impeller / LÖVE，等距矢量 + 2D 游戏；
+- **Agent**：写 / 跑 / 看 / 改，截图 + 状态 JSON + 断言；
+- **Asset**：正确姿势参考 → Nano 高清 → StaticPy atlas / GIF。
+
+一句话：**把“做游戏”变成“给方向 + 验收审美”。**
+
+## 10 秒 Demo
+
+| 新角色（Knight，16 帧） | 双引擎对拍（Lua） |
 |:---:|:---:|
-| ![Lua 生成](example/res/lua/tmall-genie.gif) | ![Dart 生成](example/res/dart/tmall-genie-dart.gif) |
+| <img src="knight_big.gif" width="300" alt="knight walk"> | <img src="example/res/lua/tmall-genie.gif" width="300" alt="tmall genie"> |
+| `make_walk.sh` 一条命令 | Dart/Lua RMSE≈1e-5 |
+
+游戏 demo：
+
+```bash
+love game/love        # 兵线对推
+love game/tetris      # 水晶方块
+```
+
+详见 [`docs/ai-game-system.md`](docs/ai-game-system.md)。
+
+## 证据（不是 PPT）
+
+| 项 | 实测 |
+|---|---|
+| 角色动画 | 16 帧 / 512×512 / 8fps；`0/15` 静止 |
+| 换角色 | 同一张姿势表 → Nano 4K → Knight；帧序/步幅不变 |
+| 本地/远程 | StaticPy 产物 **MD5 完全一致** |
+| 远端 GPU | 4090D 24G；AnimateDiff 512×16 + ControlNet + LoRA `400/400` |
+| 一键 | `./make_walk.sh --local --name knight --prompt "..."` |
+
+## 方法（闭环）
+
+```text
+口述 / 意见
+   → 结构化 brief
+   → agent 计划
+   → 写 Lua/Dart + 出素材
+   → build / run / shot / state / replay
+   → 评估（好玩 / 好看 / 崩溃）
+   → 改
+```
+
+关键不是“生成”，是 **可复现的闭环**：AI 能自己跑、自己看、自己改。
+
+## 现在 / 下一步
+
+| 能力 | 状态 |
+|---|---|
+| 等距引擎 / 渲染 / 双引擎对拍 | ✅ |
+| LÖVE 游戏 + 纯 Lua Sim | ✅ |
+| 16 帧角色素材流水线 | ✅ |
+| 本地/远程一键出 GIF | ✅ |
+| headless 基础（step/state/replay） | ✅ 基础能力 |
+| 口述 brief + agent 全流程 | 🚧 |
+| 转身 / 8 向 / RIFE / one-shot / pivot | 🚧 |
+| 自动视觉回归 / 商业打包 | 🚧 |
+
+## 快速开始
+
+```bash
+export PATH="$HOME/development/flutter/bin:$PATH"
+cd app && flutter build linux --release
+love game/love
+
+# 角色走路 GIF（本地后处理；Nano 始终本地）
+./make_walk.sh --local --name knight --prompt "cute chibi knight, ..."
+```
+
+## 技术底座：Dart + Lua 双引擎
+
+同一张等距图有两份等价实现，输出逐像素一致：
+
+| Lua 生成 | Dart 生成 |
+|:---:|:---:|
+| ![Lua](example/res/lua/tmall-genie.gif) | ![Dart](example/res/dart/tmall-genie-dart.gif) |
 | `bin/iso.sh anim tmall-genie --motion` | `bin/iso.sh anim tmall-genie-dart --motion` |
 
-> 天猫精灵 X1：等距图 + "唤醒→开盖→合上"动画。两版**逐像素一致**。
-> 源文件：`example/tmall-genie/{tmall-genie.lua, tmall_genie.dart}`；产物：`example/res/{lua,dart}/`。
+> 源文件：`example/tmall-genie/{tmall-genie.lua, tmall_genie.dart}`。
+> 引擎通用；**加图 = 加一个函数或一个 `.lua`**，不动引擎。
 
----
+## 现在能玩
 
-## 游戏（AI 游戏开发系统）· 蓝图
-
-- **设计 / 图表**：本引擎（`iso_engine` + `bin/iso.sh`）→ 出**等距矢量图 / 图表**。
-- **游戏运行时**：集成 **LÖVE**（开源 Lua 2D 引擎，`game/love/`）——渲染 / 输入 / 动画。
-- **游戏逻辑**：**纯 Lua Sim**（`iso_engine/lib/lua/game/battle.lua`）——`luajit` headless 驱动（agent 测试/复现）+ LÖVE 渲染，**同一份**。
-- **GUI 容器**：**Flutter**（`app/`，只做窗口 / 工具，不做游戏渲染）。
-- 目标：**人类给"想法 + 意见"，AI 自己开发 / 试玩 / 看画面 / 迭代 → 一个游戏诞生**。
-  详见 [`docs/ai-game-system.md`](docs/ai-game-system.md)、[`game/README.md`](game/README.md)。
-
-### 游戏列表
 | 游戏 | 位置 | 运行 |
 |---|---|---|
-| **兵线对推**（俯视 3/4 · 布兵对推 · 大招/旋斩） | `game/love/` | `love ~/iso_flutter/game/love` |
-| **水晶方块**（俄罗斯方块 · q 版玻璃水晶块 · 纯 Lua Sim + 落子记忆 + 接口驱动 + Android 可玩） | `game/tetris/` | `love ~/iso_flutter/game/tetris`（手机见其 README） |
-
----
+| **兵线对推**（俯视 3/4 · 布兵对推 · 大招/旋斩） | `game/love/` | `love game/love` |
+| **水晶方块**（俄罗斯方块 · 纯 Lua Sim · Android 可玩） | `game/tetris/` | `love game/tetris` |
 
 ## 目录结构
 
