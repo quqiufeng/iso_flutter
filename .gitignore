@@ -18,3 +18,16 @@ assets_gen/
 preview_*.png
 __pycache__/
 preview_*.png
+
+# 本地构建的 StaticPy / MobileSAM 工具（源码在 tools/，构建命令见 README）
+/bin/*.so
+/bin/align_head
+/bin/flatten
+/bin/flip
+/bin/hstack
+/bin/seg
+/bin/sheet_align
+/bin/split_grid
+
+# 本地预览 GIF（最终资产按需用 LFS / 发布包）
+/viking_walk_*.gif

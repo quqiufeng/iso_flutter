@@ -13,6 +13,37 @@
 > **所有生成 / 中间 / 临时文件一律放 `~/iso_gen/`，禁止用 `/tmp`**（`/tmp` 会被清理，已经丢过文件）。
 > 例：`~/iso_gen/<任务>/...`；最终产物再 `cp` 进仓库 `assets/`。
 
+> ## 🎨 出图路线（铁律 · 重要图 / 高质量图）
+> ### ⭐ 重要图、质量要求高的图 → **Nano Banana**（有 sh 脚本）
+> - 角色 / 封面 / 关键美术 / 任何"要好看"的图，**必须先用 Nano Banana 出图**：
+>   `bin/img_nano.sh "<prompt>" --ref <参考图> --size 3:4 --res 2K --out ~/iso_gen/...`
+>   （模型 `gemini-nano-banana-2.1`，走 apimart.ai；密钥 `~/.env: APIMART_API_KEY`）
+> - **必须传 `--ref`，且全程用同一张参考图**；不传 → 形象漂移、跨帧对不上、白花钱。
+>
+> ### ⭐ 基于这张图出**多张关键帧** → **static_comfyui Qwen-Image Edit 改图**
+> - 先用 Nano Banana 定"母图"（角色身份 / 画风 / 构图），**不要**让模型从零重画每一帧；
+> - 再以母图为输入，用 **static_comfyui 的 Qwen-Image Edit 模型**逐张改姿势 / 动作：
+>   `bash /opt/static_comfyui/cpp/sd/edit.sh <母图> "<编辑指令>" <输出图>`
+>   （本仓封装：`bin/img_qwen.sh "<编辑指令>" --ref <母图> --out ~/iso_gen/...`）
+> - 编辑指令只写**变化**（姿势 / 朝向 / 动作），并加"其余保持不变 / 形象配色完全一致"；
+>
+> ### ⭐ 出动画 → **static_comfyui 动画模型**（已有能力，别手绑骨）
+> - **AnimateDiff 一键出动画**（sd.cpp 后端，无 torch）：
+>   `bash /opt/static_comfyui/anim.sh "<prompt>" <outdir> <W> <H> <frames> <fps> <steps> <cfg> <seed>`
+>   - 环境变量：`MOTION`（运动模块，如 `mm_sd15_v3`）、`LORA`（运动 LoRA）、
+>     `CONTROL_NET` + `CONTROL_DIR`（逐帧 OpenPose 骨架控制）、`IPADAPTER*`；
+>   - 本仓封装：`dw_anim.sh` → `OUT=~/iso_gen/... POSE_FLIP=1 ./dw_anim.sh`，产物 `anim.gif`；
+> - ComfyUI blueprints（按需）：`Image to Video (LTX-2.5 / Wan 2.2)`、
+>   `First & Last Frame to Video (LTX-2.5 / FLF2V Wan VACE)`、`Frame Interpolation`、
+>   `Motion Transfer (Wan Animate 2)`；
+> - 顺序固定：**Nano 出母图 → Qwen Edit 出关键帧 → static_comfyui 动画模型出动画 → 抠图 / 基线对齐 → 拼 GIF**；
+>   关键帧**禁止**换低质量后端另起炉灶；动态效果**不**手绑骨、**不**逐帧手绘。
+
+> ## 🧩 素材后处理（铁律）
+> 切格 / 对齐 / atlas / manifest / GIF / 左右翻转一律用 **StaticPy ELF**：
+> `/opt/StaticPy/cutout`、`/opt/StaticPy/anim/{pack_sprites,frames_to_gif}`、`bin/{split_grid,align_head,flip,flatten}`。
+> **禁止**再用 PIL / numpy / ImageMagick / ffmpeg 做这些步骤。
+
 ## 1. 先读规范（`docs/references/`）
 
 | 文档 | 内容 | 必读 |

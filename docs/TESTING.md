@@ -49,6 +49,11 @@ export PATH="$HOME/development/flutter/bin:$PATH"
 | A4 | 方向 | 看 `anim.gif` 与镜像版 | 无太空步（腿与脸同向）；朝左=镜像 `POSE_FLIP=1` 输出 |
 | A5 | 视觉自检 | 拆帧拼条 + `Read` 看图 | 斗篷飘动、斗篷颜色一致、手无重影/异物 |
 | A6 | 产物 | `~/walk_{big,small}_{left,right}.gif` | 512×512×16，方向正确 |
+| A7 | 换角色配方（维京人） | 按 `WALK_ANIM.md` §9 跑 DreamShaper 8 + `POSE_FLIP=1` + 16 帧 | `viking_walk_{big,small}.gif` 512×512×16，步态正确 |
+| A8 | Qwen 单参考逐帧重绘（实验，已否决） | 按 `WALK_ANIM.md` §10 | 人物跨帧漂移，不作为正式产物；改用 A10 |
+| A9 | 原生高分辨率 AnimateDiff | `512×672` + ControlNet | 显存不足（need ~16.8GB / free ~15.6GB） |
+| A10 | 精灵图法（Nano 4×4 重绘） | 按 `WALK_ANIM.md` §11 生成精灵图，再用 StaticPy `cutout → split_grid → align_head → pack_sprites` | `~/iso_gen/nano_sprite{,_small}/staticpy/aligned1024/f00..f15.png` 1024×1024 RGBA；头盔 x=512±0.5，脚底 y=989；运动均值 ~0.12，0/15 静止；帧序与旧 approved GIF 16/16 |
+| A11 | 游戏素材专业后处理 | `cutout` 4K → `split_grid` 行优先 → `align_head` → `pack_sprites`；`FLIP=1` 出左向；`flatten`+`frames_to_gif` 预览 | `atlas_{right,left}_4096.png` 4096×4096 RGBA；`manifest_{right,left}.json` 4×4/16 帧/8fps/loop；`preview_white_1024.gif`；左 atlas = 右 atlas 逐格镜像；cell 0 与 `aligned1024/f00.png` RMSE=0 |
 
 > 常见坑：缺 `POSE_FLIP` → 太空步；LoRA 用 `walkRL_diff` → 斗篷死、手糊；提示词大改 → 角色换人。
 
