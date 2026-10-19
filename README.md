@@ -207,6 +207,21 @@ bin/iso.sh anim   <图名> [--frames 120] [--motion] [--ss 2] [--out DIR]
 
 > 同一张 16 帧姿势表，Nano 只负责换角色/高清；帧序、步幅、脚底基线保持不变。
 
+### 一键出图
+
+```bash
+# 本地后处理（Nano 始终本地）
+./make_walk.sh --local --name knight --prompt "cute chibi knight, ..."
+
+# 远程后处理（Nano 仍本地，4K 回传远端）
+./make_walk.sh --name knight --prompt "..." --instance <id>
+
+# 已有 4K 精灵图，跳过 Nano
+./make_walk.sh --local --name knight --sprite-big 4k_big.jpg --sprite-small 4k_small.jpg
+```
+
+姿势表默认用固定模板 `~/iso_gen/sprite_ref_{big,small}.png`；要换步态，先用 `dw_anim.sh` 生成新的 16 帧参考表，再传 `--ref-big/--ref-small`。
+
 ```
 pose_walk（16 张 OpenPose 骨架）
       ↓
