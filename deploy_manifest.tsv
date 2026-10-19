@@ -18,26 +18,26 @@ file	dw_anim.sh	/opt/iso_flutter/dw_anim.sh	动画入口
 file	bin/img_nano.sh	/opt/iso_flutter/bin/img_nano.sh	Nano 出图
 file	bin/motion.sh	/opt/iso_flutter/bin/motion.sh	动效自检
 file	bin/align_head	/opt/iso_flutter/bin/align_head	头盔/脚底对齐
-file	bin/align_head.so	/opt/iso_flutter/bin/align_head.so	
+file	bin/align_head.so	/opt/iso_flutter/bin/align_head.so
 file	bin/split_grid	/opt/iso_flutter/bin/split_grid	4×4 行优先切格
-file	bin/split_grid.so	/opt/iso_flutter/bin/split_grid.so	
+file	bin/split_grid.so	/opt/iso_flutter/bin/split_grid.so
 file	bin/flip	/opt/iso_flutter/bin/flip	左右翻转
-file	bin/flip.so	/opt/iso_flutter/bin/flip.so	
+file	bin/flip.so	/opt/iso_flutter/bin/flip.so
 file	bin/flatten	/opt/iso_flutter/bin/flatten	透明帧压白底
-file	bin/flatten.so	/opt/iso_flutter/bin/flatten.so	
+file	bin/flatten.so	/opt/iso_flutter/bin/flatten.so
 file	bin/hstack	/opt/iso_flutter/bin/hstack	可选：横向 strip
-file	bin/hstack.so	/opt/iso_flutter/bin/hstack.so	
+file	bin/hstack.so	/opt/iso_flutter/bin/hstack.so
 file	bin/sheet_align	/opt/iso_flutter/bin/sheet_align	可选：strip 对齐
-file	bin/sheetalign.so	/opt/iso_flutter/bin/sheetalign.so	
+file	bin/sheetalign.so	/opt/iso_flutter/bin/sheetalign.so
 file	bin/seg	/opt/iso_flutter/bin/seg	MobileSAM 扣图
-file	bin/seg.so	/opt/iso_flutter/bin/seg.so	
+file	bin/seg.so	/opt/iso_flutter/bin/seg.so
 file	bin/libmobilesam.so	/opt/iso_flutter/bin/libmobilesam.so	MobileSAM C ABI
 dir	poses/walk2	/opt/iso_flutter/poses/walk2	默认走路骨架
 # ---- 4) 模型：远端已有则跳过 ----
 file	/models/mobilesam/mobilesam.encoder.onnx	/models/mobilesam/mobilesam.encoder.onnx	MobileSAM encoder 27M
 file	/models/mobilesam/mobilesam.decoder.onnx	/models/mobilesam/mobilesam.decoder.onnx	MobileSAM decoder 16M
-file	/models/mobilesam/config.json	/models/mobilesam/config.json	
-file	/models/mobilesam/preprocessor_config.json	/models/mobilesam/preprocessor_config.json	
+file	/models/mobilesam/config.json	/models/mobilesam/config.json
+file	/models/mobilesam/preprocessor_config.json	/models/mobilesam/preprocessor_config.json
 file	/models/DreamShaper_8.safetensors	/models/DreamShaper_8.safetensors	2.0G
 file	/data/models/image/video/vae-ft-mse.safetensors	/data/models/image/video/vae-ft-mse.safetensors	320M
 file	/data/models/image/video/mm_v2_prefixed.safetensors	/data/models/image/video/mm_v2_prefixed.safetensors	867M
