@@ -193,9 +193,19 @@ bin/iso.sh anim   <图名> [--frames 120] [--motion] [--ss 2] [--out DIR]
 
 ### 效果预览
 
+**姿势参考（Viking，已验证的 16 帧步态）**
+
 | 大步 · 朝右（512×512） | 小步 · 朝左（512×512） |
 |:---:|:---:|
 | <img src="viking_walk_big_512.gif" width="320" alt="viking walk big right 512"> | <img src="viking_walk_small_512_left.gif" width="320" alt="viking walk small left 512"> |
+
+**换角色（Knight，同一套 16 帧姿势，只换角色/高清）**
+
+| 大步 · 朝右（512×512） | 小步 · 朝左（512×512） |
+|:---:|:---:|
+| <img src="knight_big.gif" width="320" alt="knight walk big right 512"> | <img src="knight_small_left.gif" width="320" alt="knight walk small left 512"> |
+
+> 同一张 16 帧姿势表，Nano 只负责换角色/高清；帧序、步幅、脚底基线保持不变。
 
 ```
 pose_walk（16 张 OpenPose 骨架）
@@ -612,6 +622,8 @@ bin/motion.sh ~/iso_gen/nano_sprite_small/staticpy/aligned1024 'f*.png'
 # 方便直接看的预览（512×512，仓库根也有同名副本）
 ~/viking_walk_big_512.gif
 ~/viking_walk_small_512_left.gif
+~/knight_big.gif
+~/knight_small_left.gif
 
 # 低清源 / 参考表
 ~/iso_gen/viking_pose_big/f00..f15.png
