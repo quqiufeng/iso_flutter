@@ -191,6 +191,12 @@ bin/iso.sh anim   <图名> [--frames 120] [--motion] [--ss 2] [--out DIR]
 > 再用 StaticPy `cutout` 抠透明、`align_head` 对齐、`pack_sprites` 打 atlas，
 > 预览 GIF 只是附带。逐帧放大/重绘一定会让人物漂移，别走那条路。
 
+### 效果预览
+
+| 大步 `big` | 小步 `small` |
+|:---:|:---:|
+| <img src="viking_walk_big_staticpy.gif" width="360" alt="viking walk big"> | <img src="viking_walk_small_staticpy.gif" width="360" alt="viking walk small"> |
+
 ```
 pose_walk（16 张 OpenPose 骨架）
       ↓

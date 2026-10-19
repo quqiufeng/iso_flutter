@@ -31,3 +31,7 @@ preview_*.png
 
 # 本地预览 GIF（最终资产按需用 LFS / 发布包）
 /viking_walk_*.gif
+
+# README 展示用 GIF（例外）
+!/viking_walk_big_staticpy.gif
+!/viking_walk_small_staticpy.gif
