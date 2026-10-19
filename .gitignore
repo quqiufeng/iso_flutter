@@ -35,3 +35,4 @@ preview_*.png
 # README 展示用 GIF（例外）
 !/viking_walk_big_staticpy.gif
 !/viking_walk_small_staticpy.gif
+!/viking_walk_small_staticpy_left.gif

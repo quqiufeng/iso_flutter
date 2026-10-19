@@ -193,9 +193,9 @@ bin/iso.sh anim   <图名> [--frames 120] [--motion] [--ss 2] [--out DIR]
 
 ### 效果预览
 
-| 大步 `big` | 小步 `small` |
+| 大步 · 朝右 | 小步 · 朝左 |
 |:---:|:---:|
-| <img src="viking_walk_big_staticpy.gif" width="360" alt="viking walk big"> | <img src="viking_walk_small_staticpy.gif" width="360" alt="viking walk small"> |
+| <img src="viking_walk_big_staticpy.gif" width="360" alt="viking walk big right"> | <img src="viking_walk_small_staticpy_left.gif" width="360" alt="viking walk small left"> |
 
 ```
 pose_walk（16 张 OpenPose 骨架）
