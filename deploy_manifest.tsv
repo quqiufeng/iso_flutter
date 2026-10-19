@@ -1,18 +1,29 @@
 # kind	local	remote	note
 # ---- 1) staticpy_comfyui: sh + 二进制 + .so ----
 file	/opt/static_comfyui/anim.sh	/opt/static_comfyui/anim.sh	AnimateDiff 入口
-file	/opt/static_comfyui/comfycli-bin	/opt/static_comfyui/comfycli-bin	comfycli ELF
-file	/opt/static_comfyui/comfycli-bin.so	/opt/static_comfyui/comfycli-bin.so	comfycli AOT
-file	/opt/static_comfyui/cpp/sd/build/libsdcpp_adapter.so	/opt/static_comfyui/cpp/sd/build/libsdcpp_adapter.so	sd.cpp adapter
+file	/opt/static_comfyui/comfycli-bin	/opt/static_comfyui/comfycli-bin	本地构建含 ADE 节点（不能软链远端旧版）
+file	/opt/static_comfyui/comfycli-bin.so	/opt/static_comfyui/comfycli-bin.so	本地构建 AOT
+file	/opt/static_comfyui/cpp/sd/build/libsdcpp_adapter.so	/opt/static_comfyui/cpp/sd/build/libsdcpp_adapter.so	本地 sd.cpp adapter
+file	/opt/sd/build-dl/bin/libstable-diffusion.so	/opt/static_comfyui/cpp/sd/build/libstable-diffusion.so	本地版（LoRA 支持）
+link	/opt/comfycli/lib/libstable-diffusion.so	/opt/sd/build-dl/bin/libstable-diffusion.so	修正镜像里错的 symlink
 dir	/opt/sd/build-dl/bin	/opt/sd/build-dl/bin	sd.cpp/ggml 后端（CUDA runtime 远端已有，不传 cudart/cublas；目录已有则跳过）
 # ---- 2) StaticPy: 素材后处理二进制 + so ----
 file	/opt/StaticPy/cutout	/opt/StaticPy/cutout	4K 白底抠图
+file	/opt/StaticPy/cutout.so	/opt/StaticPy/cutout.so	StaticPy AOT
 file	/opt/StaticPy/anim/pose_walk	/opt/StaticPy/anim/pose_walk	OpenPose 骨架
+file	/opt/StaticPy/anim/pose_walk.so	/opt/StaticPy/anim/pose_walk.so	StaticPy AOT
 file	/opt/StaticPy/anim/pack_sprites	/opt/StaticPy/anim/pack_sprites	atlas + manifest
+file	/opt/StaticPy/anim/pack_sprites.so	/opt/StaticPy/anim/pack_sprites.so	StaticPy AOT
 file	/opt/StaticPy/anim/frames_to_gif	/opt/StaticPy/anim/frames_to_gif	预览 GIF
+file	/opt/StaticPy/anim/frames_to_gif.so	/opt/StaticPy/anim/frames_to_gif.so	StaticPy AOT
 file	/opt/StaticPy/anim/split_sheet	/opt/StaticPy/anim/split_sheet	精灵表按列切
+file	/opt/StaticPy/anim/split_sheet.so	/opt/StaticPy/anim/split_sheet.so	StaticPy AOT
 file	/opt/StaticPy/cpp/imgproc/build/libimgproc.so	/opt/StaticPy/cpp/imgproc/build/libimgproc.so	StaticPy 图像核心
 file	/opt/StaticPy/cpp/atlas/build/libatlas.so	/opt/StaticPy/cpp/atlas/build/libatlas.so	atlas 打包
+file	/lib/x86_64-linux-gnu/libtiff.so.6.0.1	/opt/StaticPy/cpp/imgproc/build/libtiff.so.6	libimgproc 依赖（远端缺）
+file	/lib/x86_64-linux-gnu/libLerc.so.4	/opt/StaticPy/cpp/imgproc/build/libLerc.so.4	libtiff 依赖
+file	/lib/x86_64-linux-gnu/libjbig.so.0	/opt/StaticPy/cpp/imgproc/build/libjbig.so.0	libtiff 依赖
+file	/lib/x86_64-linux-gnu/libdeflate.so.0	/opt/StaticPy/cpp/imgproc/build/libdeflate.so.0	libtiff 依赖
 # ---- 3) 本项目: sh + 工具 + so（不含源码/文档） ----
 file	dw_anim.sh	/opt/iso_flutter/dw_anim.sh	动画入口
 file	bin/img_nano.sh	/opt/iso_flutter/bin/img_nano.sh	Nano 出图
@@ -32,6 +43,7 @@ file	bin/sheetalign.so	/opt/iso_flutter/bin/sheetalign.so
 file	bin/seg	/opt/iso_flutter/bin/seg	MobileSAM 扣图
 file	bin/seg.so	/opt/iso_flutter/bin/seg.so
 file	bin/libmobilesam.so	/opt/iso_flutter/bin/libmobilesam.so	MobileSAM C ABI
+file	/data/venv/onnxruntime-linux-x64-gpu-1.20.1/lib/libonnxruntime.so.1.20.1	/opt/iso_flutter/lib/libonnxruntime.so.1	MobileSAM 需要的 ORT 1.20.1
 dir	poses/walk2	/opt/iso_flutter/poses/walk2	默认走路骨架
 # ---- 4) 模型：远端已有则跳过 ----
 file	/models/mobilesam/mobilesam.encoder.onnx	/models/mobilesam/mobilesam.encoder.onnx	MobileSAM encoder 27M
@@ -45,4 +57,4 @@ file	/data/models/image/video/walkRL_conv.safetensors	/data/models/image/video/w
 file	/data/models/image/controlnet/control_openpose-fp16.safetensors	/data/models/image/controlnet/control_openpose-fp16.safetensors	690M
 file	/data/models/birefnet/onnx/model.onnx	/data/models/birefnet/onnx/model.onnx	低清条纹帧抠图 928M
 # 可选：seg 运行时（远端已有 libonnxruntime 则跳过）
-file	/data/venv/onnxruntime-linux-x64-gpu-1.20.1/lib/libonnxruntime.so.1.20.1	/usr/local/lib/libonnxruntime.so.1	MobileSAM 依赖，约 19M（按 .so.1 落盘）
+# 注：MobileSAM 的 ORT 用远端 /opt/sd/build-dl/bin/libonnxruntime.so.1（已存在，不传）

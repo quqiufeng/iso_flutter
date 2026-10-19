@@ -51,18 +51,18 @@ resolve_ssh() {
 }
 
 ssh_run() {
-  sshpass -p "$PW" ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    -o ConnectTimeout=20 -p "$P" "root@$H" "$*"
+  sshpass -p "$PW" ssh -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -o ConnectTimeout=20 -p "$P" "root@$H" "$*" </dev/null
 }
 
 scp_file() {
-  sshpass -p "$PW" scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    -P "$P" "$1" "root@$H:$2"
+  sshpass -p "$PW" scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -P "$P" "$1" "root@$H:$2" </dev/null
 }
 
 scp_dir() {
-  sshpass -p "$PW" scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    -P "$P" "$1/." "root@$H:$2/"
+  sshpass -p "$PW" scp -q -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -P "$P" "$1/." "root@$H:$2/" </dev/null
 }
 
 remote_exists() { ssh_run "test -e '$1'"; }
@@ -75,15 +75,16 @@ local_abs() {
 create_instance() {
   need python3
   [ -f "$XGC_DIR/.env" ] || die "缺少 $XGC_DIR/.env"
+  mkdir -p "$HOME/iso_gen"
   (
     cd "$XGC_DIR"; set -a; . ./.env; set +a
     local name="iso-assets-$(date +%m%d-%H%M)"
     echo ">>> deploy image=$IMAGE_ID type=$IMAGE_TYPE gpu=$GPU_MODEL dc=$DATA_CENTER_ID name=$name"
     python3 xgc_ctl.py deploy --name "$name" --image "$IMAGE_ID" --image-type "$IMAGE_TYPE" \
       --gpu-model "$GPU_MODEL" --data-center-id "$DATA_CENTER_ID"
-  ) | tee /tmp/iso_deploy.out
+  ) | tee "$HOME/iso_gen/iso_deploy.out"
   local id
-  id="$(sed -n 's/^instance_id=//p' /tmp/iso_deploy.out | tail -1)"
+  id="$(sed -n 's/^instance_id=//p' "$HOME/iso_gen/iso_deploy.out" | tail -1)"
   [ -n "$id" ] || die "部署失败（常见：可用GPU不足 / 镜像ID失效）"
   INSTANCE_ID="$id"; echo "$id" > "$INSTANCE_FILE"
   ( cd "$XGC_DIR"; set -a; . ./.env; set +a; python3 xgc_ctl.py wait "$id" --status running )
@@ -96,7 +97,8 @@ list_manifest() {
     case "$kind" in \#*|"") continue ;; esac
     [ -n "${remote:-}" ] || continue
     local p; p="$(local_abs "$local")"
-    local sz="?"; [ -e "$p" ] && sz="$(du -sh "$p" 2>/dev/null | cut -f1)"
+    local sz="?"
+    if [ "$kind" = link ]; then sz="link"; elif [ -e "$p" ]; then sz="$(du -sh "$p" 2>/dev/null | cut -f1)"; fi
     printf '%-5s %-10s %-55s %s\n' "$kind" "$sz" "$p" "$remote"
   done < "$MANIFEST"
 }
@@ -109,7 +111,9 @@ check_manifest() {
     [ -n "${remote:-}" ] || continue
     local p; p="$(local_abs "$local")"
     local ok="OK"
-    if [ "$kind" = dir ]; then remote_isdir "$remote" || ok="MISSING"; else remote_exists "$remote" || ok="MISSING"; fi
+    if [ "$kind" = dir ]; then remote_isdir "$remote" || ok="MISSING"
+    elif [ "$kind" = link ]; then ssh_run "test -L '$remote' && test -e '$remote'" || ok="MISSING"
+    else remote_exists "$remote" || ok="MISSING"; fi
     [ "$ok" = MISSING ] && miss=$((miss+1))
     printf '%-7s %s\n' "$ok" "$remote"
   done < "$MANIFEST"
@@ -123,6 +127,12 @@ upload_manifest() {
     case "$kind" in \#*|"") continue ;; esac
     [ -n "${remote:-}" ] || continue
     local p; p="$(local_abs "$local")"
+    if [ "$kind" = link ]; then
+      if ssh_run "test -L '$remote' && test -e '$remote'" && [ "$FORCE" != 1 ]; then echo "SKIP  $remote (symlink 已存在)"; continue; fi
+      ssh_run "mkdir -p '$(dirname "$remote")'; ln -sfn '$p' '$remote'"
+      echo "LINK  $remote -> $p"
+      n=$((n+1)); continue
+    fi
     [ -e "$p" ] || die "本地不存在: $p"
     if [ "$kind" = dir ]; then
       if remote_isdir "$remote" && [ "$FORCE" != 1 ]; then echo "SKIP  $remote (已存在)"; continue; fi
@@ -141,7 +151,7 @@ upload_manifest() {
 
 smoke() {
   resolve_ssh
-  ssh_run "export LD_LIBRARY_PATH=/opt/StaticPy/cpp/imgproc/build:/opt/iso_flutter/bin:\$LD_LIBRARY_PATH; \
+  ssh_run "export LD_LIBRARY_PATH=/opt/StaticPy/cpp/imgproc/build:/opt/iso_flutter/bin:/opt/iso_flutter/lib:/opt/sd/build-dl/bin:\$LD_LIBRARY_PATH; \
     echo '--- libs ---'; ldd /opt/StaticPy/cpp/imgproc/build/libimgproc.so | grep 'not found' || echo imgproc_OK; \
     ldd /opt/iso_flutter/bin/libmobilesam.so | grep 'not found' || echo mobilesam_OK; \
     echo '--- pose_walk ---'; rm -rf /tmp/pose_smoke; mkdir -p /tmp/pose_smoke; \
