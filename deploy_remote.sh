@@ -2,6 +2,7 @@
 # deploy_remote.sh — 按 staticpy_comfyui → StaticPy → 本项目 顺序部署（只传 sh/二进制/.so/缺失模型）
 #
 # 用法:
+#   ./deploy_remote.sh deps  [instance_id]  # 安装远端系统依赖（ImageMagick/libtiff6）
 #   ./deploy_remote.sh list                 # 列出清单
 #   ./deploy_remote.sh create               # 用镜像模板 caf6a2ee... 新开实例并等待 running
 #   ./deploy_remote.sh check [instance_id]  # 检查远端缺哪些文件（不传）
@@ -91,6 +92,11 @@ create_instance() {
   echo "instance_id=$id"
 }
 
+install_deps() {
+  resolve_ssh
+  ssh_run "export DEBIAN_FRONTEND=noninteractive; apt-get update -qq; apt-get install -y -qq imagemagick libtiff6; echo '--- verify ---'; command -v convert compare identify ffmpeg jq curl"
+}
+
 list_manifest() {
   printf '%-5s %-10s %-55s %s\n' KIND SIZE LOCAL REMOTE
   while IFS=$'\t' read -r kind local remote note; do
@@ -161,6 +167,7 @@ smoke() {
 }
 
 case "${1:-}" in
+  deps) shift; load_instance "${1:-}"; install_deps ;;
   list) list_manifest ;;
   create) create_instance ;;
   check) shift; load_instance "${1:-}"; check_manifest ;;
