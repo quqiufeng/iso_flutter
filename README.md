@@ -12,7 +12,7 @@
 - **Sim**：纯 Lua，确定性、headless、可回放；
 - **Render**：Flutter / Impeller / LÖVE，等距矢量 + 2D 游戏；
 - **Agent**：写 / 跑 / 看 / 改，截图 + 状态 JSON + 断言；
-- **Asset**：正确姿势参考 → Nano 高清 → StaticPy atlas / GIF。
+- **Asset**：动画模型出正确动作 → Nano 按姿势表高清 → StaticPy atlas / GIF。
 
 一句话：**把“做游戏”变成“给方向 + 验收审美”。**
 
@@ -252,6 +252,9 @@ bin/iso.sh anim   <图名> [--frames 120] [--motion] [--ss 2] [--out DIR]
 
 ## 游戏角色走路动画：骨架 → 低清帧 → Nano 4K 精灵图 → 透明 PNG/Atlas
 
+> **统一原则（顺序不能反）**：动作只由动画模型定 → 低清帧的姿势表交给 Nano 高清重绘 →
+> StaticPy 出游戏素材。不手绑骨、不逐帧手绘、不拿单图当动画、不先用 Nano 凭空摆姿势。
+>
 > 目标：输入一个角色提示词，产出 **16 帧、同角色、步态丝滑、1024×1024 的透明 PNG**，
 > 一张 **4096×4096 的 4×4 透明 atlas**、左右向 manifest，以及预览 GIF。按本节命令从零可复现。
 >
@@ -435,6 +438,7 @@ chmod +x bin/split_grid bin/align_head bin/flip bin/flatten
 | `pack_sprites` | 透明帧 → 4×4 atlas + `manifest.json`；`FLIP=1` 出左向 |
 | `flatten` | 透明 PNG → 纯白底（只用于预览 GIF） |
 | `frames_to_gif` | 帧序列 → 循环 GIF |
+| `upscale` | `2x` 像素画 Scale2x / `4x` Real-ESRGAN 模型（`bin/upscale 4x`；模型 `realesr-general-x4v3.onnx`） |
 | `flip` | 单帧/GIF 水平镜像（左走 ↔ 右走） |
 
 > `cutout` 是纯 StaticPy 算法，不调用模型；低清 DreamShaper 帧如果背景有横条纹，

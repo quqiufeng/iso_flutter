@@ -8,7 +8,7 @@
 | **游戏逻辑（Sim）** | **纯 Lua**（确定性/headless） | `iso_engine/lib/lua/game/`（见下「Sim 架构」） |
 | **运行时 / 渲染** | **LÖVE**（开源 Lua 2D 引擎，OpenGL） | `game/love/` |
 | **GUI 容器** | **Flutter**（只做窗口/工具，不做游戏渲染） | `app/` |
-| **角色素材** | **AI 关键帧**（Nano Banana）+ 抠图对齐 | `bin/img_nano.sh`、`game/love/assets/nb/` |
+| **角色素材** | 动画模型出动作帧 + Nano 高清重绘 | `dw_anim.sh`、`bin/img_nano.sh`、`game/love/assets/nb/` |
 
 ## Sim 架构（数据 + 行为 + 世界 + 事件）
 逻辑与表现解耦：**实体只是数据；"怎么走/怎么打"是策略函数；一切交互经"世界"这扇门；结果以事件流出。**
@@ -42,53 +42,62 @@ luajit iso_engine/lib/lua/game/run.lua --script "goto:14,14;pick" --json --repla
 ## 玩法
 左=我方防守（`1/2/3` 选兵 · 点左半场布兵）· 右=敌方进攻（成波刷兵）· 双方单位射程内自动互攻 · 推掉对方城堡即胜 · `R` 重开。
 
-## 角色 = AI 关键帧（当前方案）
+## 角色 = 动画模型定动作 + Nano 高清（当前方案）
 
-> **⚠️ 铁律 1：生成角色图必须传参考图 `--ref`，且始终用同一张角色图。**
-> Nano Banana 靠参考图锁定"同一只角色"；**不传参考图 → 每次形象都不同**（发型/盔甲/配色/比例漂移）→ **白花钱、跨帧对不上、不能当动画**。改动作只改 prompt，参考图永远同一张。
+> **⚠️ 铁律 1：动作只能由动画模型定。**
+> 先用 **SD1.5 + AnimateDiff + OpenPose ControlNet + 运动 LoRA** 出「动作正确但可能不清晰」的帧；
+> **不**手绑骨、**不**逐帧手绘、**不**拿单张图当动画。
 >
-> **⚠️ 铁律 2：凡"动态效果"（角色动作 / 打斗特效）一律走「关键帧 + 动画模型」。**
-> 先 NB 出关键帧 → 再用 **SD1.5 + AnimateDiff（动画模型）**处理成动画帧/GIF；不手绑骨、不逐帧手绘。
+> **⚠️ 铁律 2：Nano Banana 只负责按姿势表高清重绘。**
+> 把低清帧按行优先拼成 4×4 接触表，作为 `--ref` 一次重绘整张精灵图；
+> **`--ref` 必须是该动作的真实姿势表**（不是无关角色图）；**逐帧单独重绘必漂**。
+> 不要反过来先用 Nano 凭空摆姿势、再让动画模型补动作。
 
 角色**不再靠手工绑骨/分件**，而是：
 
 ```
-参考图(角色形象)
-  │ bin/img_nano.sh --ref ref.png   ← Google Nano Banana(Gemini 图像)，经 apimart.ai
-  ▼  逐张出「走路周期关键姿势」：contact(左前)/passing/contact(右前)/passing
-关键帧 PNG（白底，跨帧形象一致）
-  │ BiRefNet 抠透明背景 → 统一画布 + 脚底基线对齐 + 水平居中
+动作需求（走路 / 攻击 / 大招）
+  │ 动画模型：AnimateDiff + 逐帧 OpenPose ControlNet + 运动 LoRA（dw_anim.sh / anim.sh）
+  ▼  动作正确但可能糊的 16 帧（低清）
+低清帧（动作的唯一来源）
+  │ StaticPy pack_sprites → 行优先拼 4×4 接触表
   ▼
-帧序列 assets/nb/knight_walk_0..3.png
-  │ （可选）sd-cli -M vid_gen --motion-module  → 图生 GIF/视频
+姿势接触表
+  │ bin/img_nano.sh --ref 接触表 → 一次重绘整张高清精灵图
   ▼
-LÖVE：骑士按 walk 帧循环 → 沿兵线移动
+4096×4096 高清精灵图（16 个姿势同图，身份锁死）
+  │ StaticPy cutout → split_grid → align_head → pack_sprites
+  ▼
+assets/nb/knight_walk_0..N.png  /  atlas + manifest  /  预览 GIF
 ```
 ```bash
-# 1) 关键帧（同一参考图保证一致性）
-bash bin/img_nano.sh "同参考图的骑士，走路 KEYFRAME=CONTACT：左腿前…" \
-  --ref example/rig-knight/knight_half.png --size 3:4 --res 1K --out /tmp/walk --prefix w1
-# 1b) 本地补帧/新姿势（Qwen-Image 2.1，离线免费）——以某张关键图为参考，出"同一角色"
-bin/img_qwen.sh "同一只Q版骑士，走路接触帧：右腿前…，形象配色完全一致，纯白背景，全身" \
-  --ref /tmp/walk/w1.png --size 768x1024 --steps 12 --seed 5 --out /tmp/walk --prefix q1
-# 2) 抠图对齐（BiRefNet + ImageMagick）→ 存到 game/love/assets/nb/
-bash /opt/static_comfyui/cpp/sd/bgremove.sh w1.png nobg1.png transparent
-# 3) 拼 GIF（最简 ping-pong；无模型）
-ffmpeg -framerate 10 -i frames/f%02d.png -vf "split[a][b];[a]palettegen[p];[b][p]paletteuse" -loop 0 walk.gif
-# 3b) 或图生动画（本地 AnimateDiff，可选）
-sd-cli -M vid_gen -m sd15.safetensors --vae vae-ft-mse.safetensors \
-  --motion-module mm_sd15_v3.safetensors -i frame.png --video-frames 16 --fps 8 -o out.avi
+# 1) 动画模型出动作帧（动作对即可，不要求清晰）
+POSE_DIR=$HOME/iso_gen/pose_walk POSE_FLIP=1 CONTROL_STRENGTH=0.55 \
+  OUT=$HOME/iso_gen/walk_lowres W=512 H=512 FRAMES=16 FPS=8 SEED=42 ./dw_anim.sh
+# 2) 低清帧 → 4×4 姿势接触表（这张表就是 Nano 的 --ref）
+/opt/StaticPy/anim/pack_sprites \
+  $HOME/iso_gen/sprite_ref_4x4.png $HOME/iso_gen/sprite_ref_4x4.json \
+  512 512 0 0 512 512 4 0 ref_walk $HOME/iso_gen/walk_lowres/frame_*.png
+# 3) Nano 一次重绘整张高清精灵图（不要逐帧重绘）
+bin/img_nano.sh "保持 4×4 同样 16 个姿势、同样角色与顺序，只提升清晰度和细节，纯白底，无边框无文字" \
+  --ref $HOME/iso_gen/sprite_ref_4x4.png --size 1:1 --res 4K --out ~/iso_gen/nano_sprite --prefix knight
+# 4) StaticPy：抠图 → 行优先切格 → 对齐 → atlas/manifest/预览
+/opt/StaticPy/cutout "$SPRITE" "$WORK/cut" 1500
+bin/split_grid "$WORK/cut/aura_cut.png" "$WORK/cells" 4 4
+bin/align_head "$WORK/aligned1024" 1024 1024 512 990 "$WORK"/cells/f*.png
+/opt/StaticPy/anim/pack_sprites "$WORK/atlas_right_4096.png" "$WORK/manifest_right.json" \
+  1024 1024 0 0 1024 1024 4 0 walk_right "$WORK"/aligned1024/f*.png
 ```
-- **混合链路（当前最佳）**：**Nano 出高质量关键图 → 本地 `img_qwen.sh --ref` 出同一角色的补帧/新动作 → 拼 GIF**（形象一致、离线免费）。实测 Q 版骑士「行走」4 帧 → ping-pong 6 帧 GIF。
+- **Qwen-Image 2.1（本地）** 只用于改图 / 补帧 / 修细节；不能替代动画模型定动作。
 - LÖVE 里 `NBMAP`（`main.lua`）把兵种映射到角色（当前各兵种统一用 `knight`）；帧从 `assets/nb/<name>_<anim>_<i>.png` 加载，走路循环。
 - 关键帧尺寸偏大 → 缩放到 `~1.9*cam.s` 高绘制；图像开 **mipmap** 保持清晰。
 
 ## 技能 / 特效制作（大招为例）
 ```
-① 动作关键帧 = 关键帧方法（NB，同一参考图）
-   蓄力→举剑→砸地→收势 4 帧 → assets/nb/knight_ult_0..3（旋斩 5 帧 knight_whirl_*）
-   bash bin/img_nano.sh "…ULTIMATE KEYFRAME 3：砸地…" --ref example/rig-knight/knight_half.png --out /tmp/ult
-   → BiRefNet 抠图 → 脚底对齐
+① 动作帧 = 动画模型出「蓄力→举剑→砸地→收势」
+   低清但动作正确 → 拼 4×4 接触表 → Nano 高清重绘 → StaticPy 抠图/对齐
+   → assets/nb/knight_ult_0..N（旋斩同理 knight_whirl_*）
+   （动作只由动画模型定；Nano 的 --ref 必须是这组动作的姿势表）
 ② 特效层 = 程序化 VFX（LÖVE 画，不用图），按施法进度 p 分三段：
    蓄力金晕 → 砸地(全屏闪 + 震屏 + 冲击环 + 放射光 + 火花) → 余波扩散环
    （旋斩：白色刀光弧线绕身飞转）

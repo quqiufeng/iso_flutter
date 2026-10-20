@@ -18,6 +18,10 @@ file	/opt/StaticPy/anim/frames_to_gif	/opt/StaticPy/anim/frames_to_gif	预览 GI
 file	/opt/StaticPy/anim/frames_to_gif.so	/opt/StaticPy/anim/frames_to_gif.so	StaticPy AOT
 file	/opt/StaticPy/anim/split_sheet	/opt/StaticPy/anim/split_sheet	精灵表按列切
 file	/opt/StaticPy/anim/split_sheet.so	/opt/StaticPy/anim/split_sheet.so	StaticPy AOT
+file	/opt/StaticPy/upscale/up	/opt/StaticPy/upscale/up	2x/4x 放大（4x 走模型）
+file	/opt/StaticPy/upscale/up.so	/opt/StaticPy/upscale/up.so	StaticPy AOT
+file	/opt/StaticPy/cpp/upscale/build/libupscale.so	/opt/StaticPy/cpp/upscale/build/libupscale.so	Scale2x 2x
+file	/opt/StaticPy/cpp/sr/libsr.so	/opt/StaticPy/cpp/sr/libsr.so	Real-ESRGAN 4x
 file	/opt/StaticPy/cpp/imgproc/build/libimgproc.so	/opt/StaticPy/cpp/imgproc/build/libimgproc.so	StaticPy 图像核心
 file	/opt/StaticPy/cpp/atlas/build/libatlas.so	/opt/StaticPy/cpp/atlas/build/libatlas.so	atlas 打包
 file	/lib/x86_64-linux-gnu/libtiff.so.6.0.1	/opt/StaticPy/cpp/imgproc/build/libtiff.so.6	libimgproc 依赖（远端缺）
@@ -36,6 +40,7 @@ file	bin/flip	/opt/iso_flutter/bin/flip	左右翻转
 file	bin/flip.so	/opt/iso_flutter/bin/flip.so
 file	bin/flatten	/opt/iso_flutter/bin/flatten	透明帧压白底
 file	bin/flatten.so	/opt/iso_flutter/bin/flatten.so
+file	bin/upscale	/opt/iso_flutter/bin/upscale	2x/4x 放大入口
 file	bin/hstack	/opt/iso_flutter/bin/hstack	可选：横向 strip
 file	bin/hstack.so	/opt/iso_flutter/bin/hstack.so
 file	bin/sheet_align	/opt/iso_flutter/bin/sheet_align	可选：strip 对齐
@@ -55,6 +60,7 @@ file	/data/models/image/video/vae-ft-mse.safetensors	/data/models/image/video/va
 file	/data/models/image/video/mm_v2_prefixed.safetensors	/data/models/image/video/mm_v2_prefixed.safetensors	867M
 file	/data/models/image/video/walkRL_conv.safetensors	/data/models/image/video/walkRL_conv.safetensors	113M
 file	/data/models/image/controlnet/control_openpose-fp16.safetensors	/data/models/image/controlnet/control_openpose-fp16.safetensors	690M
+file	/data/models/image/realesr-general-x4v3.onnx	/data/models/image/realesr-general-x4v3.onnx	Real-ESRGAN 4x 模型 4.7M
 file	/data/models/birefnet/onnx/model.onnx	/data/models/birefnet/onnx/model.onnx	低清条纹帧抠图 928M
 # 可选：seg 运行时（远端已有 libonnxruntime 则跳过）
 # 注：MobileSAM 的 ORT 用远端 /opt/sd/build-dl/bin/libonnxruntime.so.1（已存在，不传）

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# upscale — StaticPy 放大入口（2x 像素画 / 4x Real-ESRGAN 模型）
+# 用法: bin/upscale 2x IN.png OUT.png          # Scale2x，保持硬边
+#       bin/upscale 4x IN.png OUT.png          # Real-ESRGAN 模型 4x
+#       bin/upscale esrgan IN.png OUT.png      # 同 4x
+set -euo pipefail
+
+STATICPY="${STATICPY:-/opt/StaticPy}"
+UP="${STATICPY_UP:-$STATICPY/upscale/up}"
+MODEL="${SR_MODEL:-/data/models/image/realesr-general-x4v3.onnx}"
+
+[ -x "$UP" ] || { echo "找不到 StaticPy upscale：$UP" >&2; exit 1; }
+
+MODE="${1:-}"
+case "$MODE" in
+  2x) ;;
+  4x|esrgan)
+    [ -f "$MODEL" ] || { echo "找不到 ESRGAN 模型：$MODEL（SR_MODEL 可指定）" >&2; exit 1; }
+    export SR_MODEL="$MODEL"
+    ;;
+  *) echo "usage: bin/upscale 2x|4x|esrgan IN.png OUT.png" >&2; exit 2 ;;
+esac
+
+export LD_LIBRARY_PATH="$STATICPY/cpp/upscale/build:$STATICPY/cpp/sr:${LD_LIBRARY_PATH:-}"
+exec "$UP" "$@"

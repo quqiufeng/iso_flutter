@@ -129,57 +129,66 @@ AI 可以在**自己的 LuaJIT 里**直接 `require` 并运行它（`step/act/st
 | **游戏逻辑（Sim）** | **纯 Lua** `iso_engine/lib/lua/game/`（`config/entity/behaviors/weapons/abilities/world/battle`） | 确定性、headless、可回放；**数据+行为+世界API+事件解耦**（加兵种只改 `config.lua`，不动主循环）；`luajit` 直接跑，**同一份**喂 LÖVE 渲染 |
 | **运行时 / 渲染** | **LÖVE（开源 Lua 2D 引擎）** `game/love/` | LuaJIT + SDL/OpenGL；`love.graphics` GPU 渲染。**集成进本项目**（当运行时用），不是"把我们的东西搬过去" |
 | **GUI 容器** | **Flutter**（`app/`） | **只做窗口/面板/工具**，**不再做游戏渲染**（按用户定） |
-| **角色关键帧** | **Google 图像（Nano Banana / Gemini）** | `bin/img_nano.sh`（经 **apimart.ai**）：以**同一张参考图**逐张出走路关键姿势 → **跨帧角色一致**（当前主力）|
-| **角色一致编辑（本地）** | **Qwen-Image 2.1（sd.cpp `sd-cli`）** | `bin/img_qwen.sh --ref`：**本地、离线、免费**的「参考图 → 同一角色」编辑/补帧。Nano 出关键图后，用它扩展新姿势或补中间帧 |
-| **动画 / GIF** | **SD1.5 + AnimateDiff 动画模型** | 本地 `sd-cli -M vid_gen --motion-module mm_sd15_v3`（`/opt/sd`）→ 由关键帧/首帧出 GIF / 视频帧 |
-| **抠图 / 对齐** | **BiRefNet** + ImageMagick | 抠透明背景 → 统一画布、**脚底基线对齐 + 水平居中** → 帧序列（`game/love/assets/nb/*.png`）|
+| **动作来源（第一步）** | **SD1.5 + AnimateDiff 动画模型** | `dw_anim.sh` / `/opt/static_comfyui/anim.sh`：AnimateDiff + 逐帧 OpenPose ControlNet + 运动 LoRA → **动作正确但可能不清晰**的帧。动作只由它定 |
+| **高清姿势图（第二步）** | **Google 图像（Nano Banana / Gemini）** | `bin/img_nano.sh`（经 **apimart.ai**）：把低清帧拼成 4×4 接触表作为 `--ref`，**一次重绘整张精灵图** → 16 个姿势身份一致、高清 |
+| **本地改图 / 补帧（辅助）** | **Qwen-Image 2.1（sd.cpp `sd-cli`）** | `bin/img_qwen.sh --ref`：本地、离线，用于改图 / 补帧 / 修细节；**不能替代动画模型定动作** |
+| **游戏素材（第三步）** | **StaticPy 素材工具** | `cutout → split_grid → align_head → pack_sprites → flatten/frames_to_gif`：透明 PNG / atlas / manifest / 预览 GIF |
 | **备选素材** | **CC0 paper-doll / 自建 Lua 骨骼** | `bin/char.sh`（分件组装，换武器/染色）、`iso_engine/lib/lua/rig.lua`（自建骨骼，零授权）|
 | **Agent 驱动** | `luajit -e` + 截图 | 无需 MCP/协议：跑 Lua 玩/测；`xdotool`+`import` 截图，agent 自己看 |
 
-> **⚠️ 统一原则：凡"动态效果"（角色动作 / 打斗特效）一律走「关键帧 + 动画模型」生成动画。**
-> 即：先用 **Google 图像（Nano Banana）出关键帧** → 再用 **SD1.5 + AnimateDiff（动画模型）**处理成动画帧/GIF。
-> **不**手绑骨、**不**逐帧手绘、**不**直接拿单张图当动画。
+> **⚠️ 统一原则：凡"动态效果"（角色动作 / 打斗特效），顺序固定为「动画模型定动作 → Nano 高清重绘 → StaticPy 出素材」。**
+> 即：先让 **SD1.5 + AnimateDiff（动画模型）** 出**动作正确但可能不清晰**的帧；
+> 再把帧的**姿势图（4×4 接触表）**交给 **Nano Banana** 重绘成高清姿势；
+> 最后用 **StaticPy** 切成游戏用 GIF / PNG / atlas。
+> **不**手绑骨、**不**逐帧手绘、**不**拿单张图当动画、**不**先用 Nano 凭空摆姿势。
 
 **角色素材链路（当前用的方案）**
 ```
-参考图(角色形象)
-   │  bin/img_nano.sh --ref  （Google Nano Banana / Gemini，经 apimart.ai）
-   ▼  逐张出「走路周期关键姿势」：contact(左前)/passing/contact(右前)/passing
-关键帧 PNG（白底，跨帧形象一致）
-   │  BiRefNet 抠图 → 统一画布、脚底基线对齐 + 水平居中
+动作需求（走路 / 攻击 / 大招）
+   │  动画模型：AnimateDiff + OpenPose ControlNet + 运动 LoRA（dw_anim.sh / anim.sh）
+   ▼  动作正确但可能糊的 16 帧（例如 512×512）
+低清帧（动作的唯一来源）
+   │  StaticPy pack_sprites → 按行优先拼 4×4 接触表
    ▼
-帧序列 knight_walk_0..3.png
-   │  （可选）sd-cli -M vid_gen --motion-module  → 图生 GIF/视频
+姿势接触表（2048×2048）
+   │  bin/img_nano.sh --ref 接触表 --res 4K  （Nano Banana / Gemini，经 apimart.ai）
+   ▼  一张 4096×4096 高清精灵图（16 个姿势同图，身份锁死）
+   │  StaticPy cutout → split_grid → align_head → pack_sprites
    ▼
-LÖVE：角色按 walk 帧循环 → 在等距地图上沿兵线移动
+游戏资源：透明 PNG 帧 / atlas + manifest / 预览 GIF
 ```
 ```bash
-# ① 关键帧 —— ⚠️ 必须 --ref 同一张角色图，否则形象漂移、不可用（白花钱）
-bin/img_nano.sh "同参考图的骑士…走路 KEYFRAME=CONTACT：左腿前…" --ref ref.png --size 3:4 --res 1K --out out
+# ① 动画模型出动作帧（动作/朝向/节奏正确即可，不要求清晰）
+POSE_DIR=$HOME/iso_gen/pose_walk POSE_FLIP=1 CONTROL_STRENGTH=0.55 \
+  OUT=$HOME/iso_gen/walk_lowres W=512 H=512 FRAMES=16 FPS=8 SEED=42 ./dw_anim.sh
 
-# ② 本地一致编辑/补帧（Qwen-Image 2.1，sd.cpp）——以某张关键图为参考，出"同一角色"的新姿势
-bin/img_qwen.sh "同一只Q版骑士，<新姿势/新角度>，形象配色完全一致，纯白背景，全身" \
-  --ref out/w1.png --size 768x1024 --steps 12 --seed 5 --out out --prefix qk
+# ② 低清帧 → 4×4 姿势接触表（行优先；这张表就是 Nano 的 --ref）
+/opt/StaticPy/anim/pack_sprites \
+  $HOME/iso_gen/sprite_ref_4x4.png $HOME/iso_gen/sprite_ref_4x4.json \
+  512 512 0 0 512 512 4 0 ref_walk $HOME/iso_gen/walk_lowres/frame_*.png
 
-# ③ 图生 GIF（本地 AnimateDiff）
-sd-cli -M vid_gen -m sd15.safetensors --vae vae-ft-mse.safetensors \
-  --motion-module mm_sd15_v3.safetensors -i frame.png --video-frames 16 --fps 8 -o out.avi
+# ③ 用姿势表让 Nano 一次重绘整张高清精灵图（不要逐帧重绘）
+bin/img_nano.sh "保持 4×4 同样 16 个姿势、同样角色与顺序，只提升清晰度和细节，纯白底，无边框无文字" \
+  --ref $HOME/iso_gen/sprite_ref_4x4.png --size 1:1 --res 4K --out ~/iso_gen/nano_sprite --prefix walk
 
-# ④ 关键帧拼 GIF（最简：ping-pong 循环，无模型）
-ffmpeg -framerate 10 -i walk/f%02d.png -vf "split[a][b];[a]palettegen[p];[b][p]paletteuse" -loop 0 walk.gif
+# ④ StaticPy 后处理 → 透明 PNG / atlas / manifest / 预览 GIF
+/opt/StaticPy/cutout "$SPRITE" "$WORK/cut" 1500
+bin/split_grid "$WORK/cut/aura_cut.png" "$WORK/cells" 4 4
+bin/align_head "$WORK/aligned1024" 1024 1024 512 990 "$WORK"/cells/f*.png
+/opt/StaticPy/anim/pack_sprites "$WORK/atlas_right_4096.png" "$WORK/manifest_right.json" \
+  1024 1024 0 0 1024 1024 4 0 walk_right "$WORK"/aligned1024/f*.png
 ```
 
-> **混合链路（推荐）**：**Nano 出高质量关键图**（形象最佳）→ **本地 `img_qwen.sh --ref` 出同一角色的补帧/新动作**（离线免费、形象一致）→ 拼 GIF。
-> 实测：Q 版骑士「行走」4 帧 → ping-pong 6 帧 GIF，披风/红缨随动、跨帧一致。
-> 本地 Qwen-Image 2.1 权重：`/data/models/image/qwen-image-2.1-Q6_K.gguf` + `qwen_image_2.1_vae_bf16.safetensors` + `Qwen3VL-8B-Instruct-Q4_K_M.gguf` + `mmproj-Qwen3VL-8B-Instruct-F16.gguf`（编辑需 vision）。
+> **Qwen-Image 2.1（本地）的定位**：只用于改图 / 补帧 / 修细节（`bin/img_qwen.sh --ref`），
+> 或把已有高清图改成新姿势；**动作仍必须由动画模型给出**，不能拿 Qwen 逐帧摆姿势替代。
+> 权重：`/data/models/image/qwen-image-2.1-Q6_K.gguf` + `qwen_image_2.1_vae_bf16.safetensors` +
+> `Qwen3VL-8B-Instruct-Q4_K_M.gguf` + `mmproj-Qwen3VL-8B-Instruct-F16.gguf`（编辑需 vision）。
 
 **技能 / 打斗特效制作（大招为例）**
 ```
-① 动作关键帧  = 关键帧方法（NB，同一参考图）
-   「蓄力 → 举剑 → 砸地 → 收势」4 帧 → knight_ult_0..3
-   （旋斩同理 5 帧 knight_whirl_0..4；攻击 3 帧 knight_attack_0..2）
-   bin/img_nano.sh "同参考图骑士…ULTIMATE KEYFRAME 3：砸地…" --ref ref.png ...
-   → BiRefNet 抠图 → 脚底基线对齐 → 存 game/love/assets/nb/
+① 动作帧    = 动画模型出「蓄力 → 举剑 → 砸地 → 收势」（AnimateDiff + ControlNet）
+   低清但动作正确 → 拼接触表 → Nano 高清重绘 → StaticPy 抠图/对齐
+   → knight_ult_0..N（旋斩同理 knight_whirl_*；攻击 knight_attack_*）
 ② 特效层    = 程序化 VFX（LÖVE 绘制，不用图），按施法进度 p 分三段：
    · 蓄力 (p<0.45)：金色光晕逐层叠加 + 光丝向剑聚拢
    · 砸地瞬间(p≈0.45)：全屏闪光 + 震屏 + 冲击环 + 放射光 + 火花粒子
@@ -188,14 +197,18 @@ ffmpeg -framerate 10 -i walk/f%02d.png -vf "split[a][b];[a]palettegen[p];[b][p]p
 ③ 数值       = Sim（battle.lua）：ultimate() 全体敌方 AoE + 冷却；whirlwind() 全体我方旋风斩 + 周围 AoE
 ④ 播放同步   = 动画按固定时长不循环（ULT_DUR=1.1s / WHIRL_DUR=0.75s），VFX 与该进度对齐
 ```
-即：**动作 = 关键帧（AI）**，**特效 = 程序化叠加**，**数值 = Sim**，三者按同一进度同步。
+即：**动作 = 动画模型出帧 + Nano 高清**，**特效 = 程序化叠加**，**数值 = Sim**，三者按同一进度同步。
 
 **关键教训**
-- **⚠️ 生成角色（关键帧/姿势）必须传参考图 `--ref`，且始终用同一张角色图**：Nano Banana 靠参考图锁定"这只角色"。**不传参考图 → 每次出的形象都不同**（发型/盔甲/配色/比例漂移）→ **白花钱、跨帧对不上、不能当动画用**。改动作只改 `prompt`，**参考图永远是同一张**。
-- **关键帧一致性靠"同一参考图"**：Nano Banana 给同一张角色参考图、逐张出姿势，实测**跨帧形象高度一致**（contact/passing 互换无误）→ 是当前做角色的主力。
-- **本地图生动画**：`/opt/sd` 的 `sd-cli` 支持 AnimateDiff（`-M vid_gen --motion-module`），能从关键帧/首帧出 GIF；但该分支**不接 ControlNet**（不能姿态驱动），单图只出**轻微运动** → **受控动作仍靠"逐张关键帧"**。
+- **⚠️ 动作只能由动画模型定**：先 AnimateDiff/ControlNet 出「动作正确但可能糊」的帧；
+  Nano 只做高清重绘。反过来（先 Nano 摆姿势、再让动画模型补动作）步态/节奏必错。
+- **Nano 的 `--ref` 必须是该动作的真实姿势表**（低清帧拼的 4×4 接触表），不是另一张无关角色图；
+  **一次重绘整张 4×4 精灵图**，16 个姿势同图 → 身份锁死；**逐帧重绘必漂**。
+- **本地图生动画的局限**：`sd-cli -M vid_gen` 分支**不接 ControlNet**，单图只能出轻微运动；
+  受控动作要用 `static_comfyui/anim.sh` / `dw_anim.sh` 的逐帧骨架控制。
+- **Qwen-Image 2.1** 只用于改图 / 补帧 / 修细节，不负责定动作。
 - Wan 视频（gguf 5D）在本仓库跑不了：ggml `GGML_MAX_DIMS==4`。
-- 早期"自建骨骼/单图网格蒙皮"能做**受控**动作但形象一般（无 GUI 手调）；现以 **AI 关键帧**为主。
+- 早期"自建骨骼/单图网格蒙皮"能做**受控**动作但形象一般（无 GUI 手调）；现以「动画模型 + Nano」为主。
 - 我们**自己的引擎仍负责"图表/矢量插画"**（iso.sh，`iso_engine`）；**游戏**交给 LÖVE。
 
 **数据流**
@@ -230,9 +243,10 @@ Agent（my-agent）写 Lua(Sim + 场景/素材)
 |---|---|---|
 | **矢量等距图**（场景/物件/角色/UI）| `bin/iso.sh`（+ `iso_engine`）| **代码生成**（Lua/Dart）；AI 可直接写 → 无需美术 |
 | **位图素材**（贴图/精灵/道具/图标）| `bin/img.sh` | 基于 `/opt/static_comfyui` 的 `backup.sh`（Z-Image Turbo）+ BiRefNet **抠图**；素材档尺寸预设 + 透明背景 + LoRA 风格 |
-| **角色关键帧**（AI 手绘卡通）| `bin/img_nano.sh` | **Nano Banana**（Google Gemini 图像，经 **apimart.ai**）：`--ref` 参考图一致性、`--size/--res/--n`；密钥 `~/.env: APIMART_API_KEY`；`bin/cutparts.sh` 切件 |
-| **角色一致编辑/补帧**（本地离线）| `bin/img_qwen.sh` | **Qwen-Image 2.1**（sd.cpp `sd-cli`）：`--ref` 参考图 → **同一角色**的新姿势/新帧；免费、可批量；`--bg transparent` 走 BiRefNet 抠图 |
-| **图生动画 / GIF** | `sd-cli -M vid_gen`（`/opt/sd`）| **SD1.5 + AnimateDiff** motion module（`mm_sd15_v3`）+ `vae-ft-mse`；`--video-frames/--fps` → avi/gif |
+| **动态动作帧**（动作来源） | `dw_anim.sh` / `/opt/static_comfyui/anim.sh` | **SD1.5 + AnimateDiff** motion module + 逐帧 OpenPose ControlNet + 运动 LoRA → 动作正确但可能不清晰的帧 |
+| **高清姿势图**（4×4 重绘） | `bin/img_nano.sh` | **Nano Banana**（Google Gemini 图像，经 **apimart.ai**）：`--ref` 低清姿势接触表、一次重绘整张精灵图；密钥 `~/.env: APIMART_API_KEY` |
+| **本地改图 / 补帧**（辅助）| `bin/img_qwen.sh` | **Qwen-Image 2.1**（sd.cpp `sd-cli`）：`--ref` 参考图 → **同一角色**的改图/补帧/修细节；**不负责定动作**；`--bg transparent` 走 BiRefNet 抠图 |
+| **图生动画 / GIF**（仅轻微运动） | `sd-cli -M vid_gen`（`/opt/sd`）| **SD1.5 + AnimateDiff** motion module（`mm_sd15_v3`）+ `vae-ft-mse`；**不接 ControlNet**，受控动作请用 `dw_anim.sh` |
 | **语音/配音** | `bin/tts.sh` | sherpa-onnx + **Kokoro**（中/英多音色）→ wav/mp3；可指定 **CosyVoice3 克隆音色** |
 
 ```bash

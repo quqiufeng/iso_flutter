@@ -1,5 +1,10 @@
 # walk_anim —— 2D 角色侧视走路循环生成
 
+> **★ 统一原则（顺序不能反）**：动画模型先出「动作正确但可能不清晰」的帧；
+> 再用这些帧拼成的 **4×4 姿势接触表** 作为 `--ref` 交给 Nano Banana 高清重绘；
+> 最后由 StaticPy 出游戏用 GIF / PNG / atlas。
+> **不**手绑骨、**不**逐帧手绘、**不**拿单张图当动画、**不**先用 Nano 凭空摆姿势。
+>
 > **现状（sd.cpp 版）**：图像处理走 **StaticPy `imgproc`**（`pose_walk`(StaticPy)/`imgproc/mirror_gif`，无 PIL/numpy）；
 > 生成走 **sd.cpp + comfycli**（`/opt/static_comfyui`，`anim.sh` 入口），**无 diffusers/torch**。
 > 旧 diffusers 版 `dw_cn.py` **已删除**；`dw_anim.sh` 现为 **bash**（调 sd.cpp）。
@@ -276,14 +281,16 @@ bin/motion.sh ~/iso_gen/viking_small_final 'frame_*.png'
 - `0.3`：细节明显变好，但会改角色（实测彩虹辫子、盔角数量变化）；
 - 加 IP-Adapter 锁角色：画面出现彩色边缘（chromatic aberration）。
 所以「同一角色、只提升清晰度」用 **ESRGAN 4× + 降采样** 最稳，像素级超分不会改动作/身份。
+`bin/upscale 4x` 会真正加载 `/data/models/image/realesr-general-x4v3.onnx`（StaticPy `libsr` + ONNX Runtime）；`2x` 才是像素画 Scale2x。
 
 ```bash
 cd ~/iso_gen
+UP=$HOME/iso_flutter/bin/upscale
 for tag in big small; do
   mkdir -p viking_${tag}_sr/{raw,frames}
   for f in viking_${tag}_final/frame_*.png; do
     b=$(basename "$f")
-    /opt/StaticPy/tools/run.sh sr "$f" "viking_${tag}_sr/raw/$b"
+    "$UP" 4x "$f" "viking_${tag}_sr/raw/$b"
     convert "viking_${tag}_sr/raw/$b" -resize 1024x1024 \
       -unsharp 0x0.5+0.4+0.005 "viking_${tag}_sr/frames/$b"
   done

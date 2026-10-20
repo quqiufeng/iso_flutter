@@ -13,35 +13,43 @@
 > **所有生成 / 中间 / 临时文件一律放 `~/iso_gen/`，禁止用 `/tmp`**（`/tmp` 会被清理，已经丢过文件）。
 > 例：`~/iso_gen/<任务>/...`；最终产物再 `cp` 进仓库 `assets/`。
 
-> ## 🎨 出图路线（铁律 · 重要图 / 高质量图）
-> ### ⭐ 重要图、质量要求高的图 → **Nano Banana**（有 sh 脚本）
-> - 角色 / 封面 / 关键美术 / 任何"要好看"的图，**必须先用 Nano Banana 出图**：
->   `bin/img_nano.sh "<prompt>" --ref <参考图> --size 3:4 --res 2K --out ~/iso_gen/...`
->   （模型 `gemini-nano-banana-2.1`，走 apimart.ai；密钥 `~/.env: APIMART_API_KEY`）
-> - **必须传 `--ref`，且全程用同一张参考图**；不传 → 形象漂移、跨帧对不上、白花钱。
+> ## 🎨 动态效果路线（铁律 · 顺序不能反）
+> **凡"动态效果"（角色动作 / 打斗特效）：动画模型先定动作 → Nano 只负责高清重绘 → StaticPy 出游戏素材。**
+> **不**手绑骨、**不**逐帧手绘、**不**直接拿单张图当动画、**不**先用 Nano 凭空摆姿势。
 >
-> ### ⭐ 基于这张图出**多张关键帧** → **static_comfyui Qwen-Image Edit 改图**
-> - 先用 Nano Banana 定"母图"（角色身份 / 画风 / 构图），**不要**让模型从零重画每一帧；
-> - 再以母图为输入，用 **static_comfyui 的 Qwen-Image Edit 模型**逐张改姿势 / 动作：
->   `bash /opt/static_comfyui/cpp/sd/edit.sh <母图> "<编辑指令>" <输出图>`
->   （本仓封装：`bin/img_qwen.sh "<编辑指令>" --ref <母图> --out ~/iso_gen/...`）
-> - 编辑指令只写**变化**（姿势 / 朝向 / 动作），并加"其余保持不变 / 形象配色完全一致"；
->
-> ### ⭐ 出动画 → **static_comfyui 动画模型**（已有能力，别手绑骨）
-> - **AnimateDiff 一键出动画**（sd.cpp 后端，无 torch）：
+> ### ⭐ 第一步：动画模型出「动作正确但可能不清晰」的帧
+> - 动作的唯一来源是动画模型（AnimateDiff + OpenPose ControlNet + 运动 LoRA，sd.cpp / static_comfyui）：
 >   `bash /opt/static_comfyui/anim.sh "<prompt>" <outdir> <W> <H> <frames> <fps> <steps> <cfg> <seed>`
->   - 环境变量：`MOTION`（运动模块，如 `mm_sd15_v3`）、`LORA`（运动 LoRA）、
->     `CONTROL_NET` + `CONTROL_DIR`（逐帧 OpenPose 骨架控制）、`IPADAPTER*`；
->   - 本仓封装：`dw_anim.sh` → `OUT=~/iso_gen/... POSE_FLIP=1 ./dw_anim.sh`，产物 `anim.gif`；
+>   - 环境变量：`MOTION`（如 `mm_sd15_v3`）、`LORA`（运动 LoRA）、
+>     `CONTROL_NET` + `CONTROL_DIR`（逐帧 OpenPose 骨架）、`POSE_FLIP`、`IPADAPTER*`；
+>   - 本仓封装：`POSE_DIR=... POSE_FLIP=1 OUT=~/iso_gen/... ./dw_anim.sh`，产物 `anim.gif` + 逐帧 PNG；
+> - 这一步只要求**动作/朝向/节奏/步幅正确**；不清晰、背景脏都可以接受，后面有 Nano 重绘。
+>
+> ### ⭐ 第二步：用动画帧的姿势 → Nano Banana 出高清姿势图
+> - 把低清帧按**行优先**拼成 4×4 接触表（StaticPy `pack_sprites`），把它作为 `--ref`：
+>   `bin/img_nano.sh "<prompt: 保持 4×4 同样 16 个姿势，只提升清晰度/细节>" \
+>     --ref ~/iso_gen/sprite_ref_big.png --size 1:1 --res 4K --out ~/iso_gen/nano_sprite`
+>   （模型 `gemini-nano-banana-2.1`，走 apimart.ai；密钥 `~/.env: APIMART_API_KEY`）
+> - **`--ref` 必须是该动作的真实姿势表**（不是另一张无关角色图）；**一次重绘整张 4×4 精灵图**，
+>   16 个姿势在同一张图里 → 角色身份天然锁死；**不要逐帧单独重绘**（必漂）。
+>
+> ### ⭐ 第三步：StaticPy 后处理成游戏资源
+> - `cutout` → `split_grid`（行优先）→ `align_head`（头盔 x / 脚底 y）→
+>   `pack_sprites`（atlas + manifest，`FLIP=1` 出左向）→ `flatten` + `frames_to_gif`（预览）；
+> - **Qwen-Image Edit**（`bin/img_qwen.sh`）只用于本地改图 / 补帧 / 修细节，**不能替代动画模型定动作**；
 > - ComfyUI blueprints（按需）：`Image to Video (LTX-2.5 / Wan 2.2)`、
 >   `First & Last Frame to Video (LTX-2.5 / FLF2V Wan VACE)`、`Frame Interpolation`、
 >   `Motion Transfer (Wan Animate 2)`；
-> - 顺序固定：**Nano 出母图 → Qwen Edit 出关键帧 → static_comfyui 动画模型出动画 → 抠图 / 基线对齐 → 拼 GIF**；
->   关键帧**禁止**换低质量后端另起炉灶；动态效果**不**手绑骨、**不**逐帧手绘。
+> - 顺序固定：**动画模型出动作帧 → 4×4 接触表 → Nano 高清重绘 → 抠图/对齐/atlas/GIF**。
+>
+> ### ⭐ 静态图（角色母图 / 封面 / 关键美术）
+> - 仍优先 **Nano Banana**，必须传 `--ref` 并全程用同一张参考图；
+> - 母图可用于锁角色形象（配合 IP-Adapter / 角色 LoRA），但**动作/帧序列不能由它代替动画模型**。
 
 > ## 🧩 素材后处理（铁律）
-> 切格 / 对齐 / atlas / manifest / GIF / 左右翻转一律用 **StaticPy ELF**：
-> `/opt/StaticPy/cutout`、`/opt/StaticPy/anim/{pack_sprites,frames_to_gif}`、`bin/{split_grid,align_head,flip,flatten}`。
+> 切格 / 对齐 / atlas / manifest / GIF / 左右翻转 / 放大一律用 **StaticPy ELF**：
+> `/opt/StaticPy/cutout`、`/opt/StaticPy/anim/{pack_sprites,frames_to_gif}`、`bin/{split_grid,align_head,flip,flatten,upscale}`。
+> `bin/upscale 4x` 走 **Real-ESRGAN 模型**（`/data/models/image/realesr-general-x4v3.onnx`）；`2x` 才是像素画 Scale2x。
 > **禁止**再用 PIL / numpy / ImageMagick / ffmpeg 做这些步骤。
 
 ## 1. 先读规范（`docs/references/`）
