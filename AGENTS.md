@@ -86,7 +86,7 @@
 
 ## 5. 蓝图：AI 游戏开发系统
 
-把引擎封装成"AI 可驱动"的游戏运行时（Sim 纯 Lua / Render Flutter + headless 步进 + 输入注入/回放 + 状态内省），
+把引擎封装成"AI 可驱动"的游戏运行时（Sim 纯 Lua / **Render LÖVE** + headless 步进 + 输入注入/回放 + 状态内省），
 接上 agent 闭环 → **人类给想法与意见，AI 自己开发/试玩/看画面/迭代**。见 `docs/ai-game-system.md`；闭环方法论见 `docs/automation.md`。
 
 ## 6. 自驱视觉闭环：**截图 → 识别 → 调整**（agent 自己跑、自己看、自己改）

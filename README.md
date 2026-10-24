@@ -10,7 +10,7 @@
 这套系统由四层组成：
 
 - **Sim**：纯 Lua，确定性、headless、可回放；
-- **Render**：Flutter / Impeller / LÖVE，等距矢量 + 2D 游戏；
+- **Render**：**LÖVE 跑游戏**（`game/love`、`game/tetris`）；**Flutter 只做等距图/工具窗口**，不做游戏渲染；
 - **Agent**：写 / 跑 / 看 / 改，截图 + 状态 JSON + 断言；
 - **Asset**：动画模型出正确动作 → Nano 按姿势表高清 → StaticPy atlas / GIF。
 
@@ -153,6 +153,8 @@ iso_flutter/                       # 独立仓（自包含）
                   │
             PNG / GIF / MP4   （bin/iso.sh → 可发微信）
 ```
+
+> 上图是**等距图**（Flutter/Impeller）的流水线。**游戏不走这条**：游戏 = 纯 Lua Sim → **LÖVE 渲染**（`game/love`、`game/tetris`），Flutter 不做游戏渲染。
 
 分层：**应用（`app`）⊥ 框架（`iso_engine`）⊥ 内容（图）**。引擎通用；**加图 = 加一个画图函数或一个 `.lua`**，不动引擎。
 

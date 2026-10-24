@@ -1,7 +1,7 @@
 # game/sim —— 纯 Lua 游戏仿真（AI 可驱动核心）
 
 **headless · 确定性 · 可回放 · 零协议**。agent 用 `luajit -e` 就能直接驱动/调试/试玩——
-因为游戏与 agent **同处一个 LuaJIT 世界**。渲染宿主（Flutter / LÖVE）只**消费 `state()`**。
+因为游戏与 agent **同处一个 LuaJIT 世界**。游戏渲染宿主是 **LÖVE**（Flutter 只做等距图/工具），渲染层只**消费 `state()`**。
 
 ## API
 ```lua

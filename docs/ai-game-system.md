@@ -49,9 +49,10 @@
   └───────────────┬───────────────┘
                   │  状态
   ┌───────────────┴───────────────┐
-  │   Render（Flutter / Impeller） │   ← 等距矢量渲染（iso_engine：投影/基元/线稿/shader）
+  │   Render（LÖVE / Flutter）     │   ← 游戏用 LÖVE；Flutter 只做等距图/工具
   └───────────────────────────────┘
 ```
+> **游戏框架是 LÖVE**：`game/love`、`game/tetris` 用 `love` 跑；Flutter（`app/`）只负责等距矢量图与离屏导出，**不做游戏渲染**。
 
 **为什么这么分**：Sim 是**纯 Lua、确定性、无 Flutter** →
 AI 可以在**自己的 LuaJIT 里**直接 `require` 并运行它（`step/act/state`），**连 FFI 都不需要**；
